@@ -1,0 +1,30 @@
+# OSX
+#
+.DS_Store
+
+# Android/IntelliJ
+#
+build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+.externalNativeBuild/
+
+# Signing keys (sensitive, never commit)
+*.keystore
+*.jks
+*.p12
+*.p8
+
+# Build artifacts (generated, never commit)
+*.apk
+*.aab
+
+# Bundle artifacts
+*.jsbundle
+
+# Firebase credentials (sensitive, never commit)
+app/google-services.json

@@ -1,0 +1,135 @@
+import * as Notifications from 'expo-notifications'
+import * as Device from 'expo-device'
+import { Platform } from 'react-native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import Constants from 'expo-constants'
+import { deviceApi } from './api'
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+})
+
+export async function registerForPushNotifications() {
+  if (!Device.isDevice) {
+    console.log('Push notifications only work on physical devices')
+    return null
+  }
+
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Subscription Reminders',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#F5B65A',
+    })
+  }
+
+  const { status: existingStatus } = await Notifications.getPermissionsAsync()
+  let finalStatus = existingStatus
+
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync()
+    finalStatus = status
+  }
+
+  if (finalStatus !== 'granted') {
+    console.log('Failed to get push token')
+    return null
+  }
+
+  try {
+    const projectId = Constants.manifest?.extra?.expoProjectId
+    if (!projectId) {
+      throw new Error('expoProjectId is not configured in app.json')
+    }
+    const token = (
+  await Notifications.getExpoPushTokenAsync({
+    projectId
+  })
+).data
+    console.log('Push notification token:', token)
+    await deviceApi.register(token, Platform.OS as 'ios' | 'android')
+    // Only persist token after successful backend registration
+    await AsyncStorage.setItem('deviceToken', token)
+
+    return token
+  } catch (error) {
+    console.error('Error registering for push notifications:', error)
+    return null
+  }
+}
+
+export async function checkNotificationPermissions() {
+  const { status } = await Notifications.getPermissionsAsync()
+  return status === 'granted'
+}
+
+export async function scheduleLocalNotification(
+  subscriptionName: string,
+  amount: number,
+  currency: string,
+  daysUntil: number,
+  scheduledDate: Date
+) {
+  let title: string
+  let body: string
+
+  if (daysUntil === 0) {
+    title = `${subscriptionName} charges today!`
+    body = `${currency} ${amount} will be charged today`
+  } else if (daysUntil === 1) {
+    title = `${subscriptionName} charges tomorrow`
+    body = `${currency} ${amount} will be charged in 1 day`
+  } else {
+    title = `${subscriptionName} upcoming charge`
+    body = `${currency} ${amount} will be charged in ${daysUntil} days`
+  }
+
+  const secondsUntilNotification = Math.floor((scheduledDate.getTime() - Date.now()) / 1000)
+
+  // Explicitly handle past dates instead of forcing a 1-second trigger
+  if (secondsUntilNotification <= 0) {
+    console.warn(
+      `[scheduleLocalNotification] Skipping notification for "${subscriptionName}" - scheduled date is in the past (${secondsUntilNotification}s ago)`,
+      { scheduledDate: scheduledDate.toISOString(), now: new Date().toISOString() }
+    )
+    return // Skip scheduling; treat as missed notification
+  }
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title,
+      body,
+      sound: true,
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      data: { subscriptionName, daysUntil },
+    },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: secondsUntilNotification },
+  })
+}
+
+export async function cancelAllScheduledNotifications() {
+  await Notifications.cancelAllScheduledNotificationsAsync()
+}
+
+export async function getScheduledNotifications() {
+  return await Notifications.getAllScheduledNotificationsAsync()
+}
+
+export function addNotificationReceivedListener(
+  listener: (notification: Notifications.Notification) => void
+) {
+  return Notifications.addNotificationReceivedListener(listener)
+}
+
+export function addNotificationResponseReceivedListener(
+  listener: (response: Notifications.NotificationResponse) => void
+) {
+  return Notifications.addNotificationResponseReceivedListener(listener)
+}

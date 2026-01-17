@@ -1,98 +1,236 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import React, { useState, useCallback } from 'react'
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, ActivityIndicator } from 'react-native'
+import { useRouter, useFocusEffect } from 'expo-router'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
+import SubscriptionCard from '@/components/Subscriptioncard'
+import Button from '@/components/Button'
+import { subscriptionsApi, Subscription } from '@/services/api'
+import { useTheme } from '@/contexts/ThemeContext'
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const router = useRouter()
+  const { colors } = useTheme()
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
-  );
+  const loadSubscriptions = async () => {
+    try {
+      setError(null)
+      const data = await subscriptionsApi.getAll()
+      setSubscriptions(data)
+    } catch (error: any) {
+      console.error('Failed to load subscriptions:', error)
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to connect to server'
+      setError(errorMessage)
+      
+      if (!loading) {
+        Alert.alert('Error', errorMessage)
+      }
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSubscriptions()
+    }, [])
+  )
+
+  const onRefresh = () => {
+    setRefreshing(true)
+    loadSubscriptions()
+  }
+
+  const renderEmpty = () => (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyIcon}>📋</Text>
+      <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>No subscriptions yet</Text>
+      <Text style={[styles.emptyText, { color: colors.text.secondary }]}>
+        Add your first subscription to start tracking your recurring payments
+      </Text>
+      <Button
+        title="Add Subscription"
+        onPress={() => router.push('/add-subscription')}
+        style={styles.emptyButton}
+      />
+    </View>
+  )
+
+  const renderError = () => (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyIcon}>⚠️</Text>
+      <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>Connection Error</Text>
+      <Text style={[styles.emptyText, { color: colors.text.secondary }]}>
+        {error || 'Failed to connect to server'}
+      </Text>
+      <Text style={[styles.helpText, { color: colors.text.muted }]}>
+        Make sure the backend is running and you&apos;re on the same WiFi network.
+      </Text>
+      <Button
+        title="Retry"
+        onPress={() => {
+          setLoading(true)
+          loadSubscriptions()
+        }}
+        style={styles.emptyButton}
+      />
+      <Button
+        title="Add Subscription Anyway"
+        onPress={() => router.push('/add-subscription')}
+        variant="secondary"
+        style={styles.emptyButton}
+      />
+    </View>
+  )
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background.primary }]} edges={['top']}>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: colors.text.primary }]}>Subscriptions</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.accent.primary} />
+          <Text style={[styles.loadingText, { color: colors.text.secondary }]}>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background.primary }]} edges={['top']}>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: colors.text.primary }]}>Subscriptions</Text>
+        <TouchableOpacity
+          onPress={() => router.push('/settings')}
+          style={styles.settingsButton}
+        >
+          <Ionicons name="settings-outline" size={24} color={colors.text.primary} />
+        </TouchableOpacity>
+      </View>
+
+      {error && subscriptions.length === 0 ? (
+        renderError()
+      ) : (
+        <FlatList
+          data={subscriptions}
+          renderItem={({ item }) => <SubscriptionCard subscription={item} />}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={renderEmpty}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.accent.primary}
+            />
+          }
+          ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
+        />
+      )}
+
+      {subscriptions.length > 0 && (
+        <View style={styles.fabContainer}>
+          <TouchableOpacity
+            style={[styles.fab, { backgroundColor: colors.accent.primary }]}
+            onPress={() => router.push('/add-subscription')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add" size={32} color={colors.background.primary} />
+          </TouchableOpacity>
+        </View>
+      )}
+    </SafeAreaView>
+  )
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
   },
-  stepContainer: {
-    gap: 8,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 13,
+    fontWeight: '400',
+  },
+  listContent: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingTop: 100,
+    paddingHorizontal: 32,
+  },
+  emptyIcon: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 13,
+    fontWeight: '400',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  helpText: {
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyButton: {
+    width: '100%',
+    maxWidth: 300,
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
+  fabContainer: {
     position: 'absolute',
+    bottom: 100,
+    right: 16,
   },
-});
+  fab: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+})

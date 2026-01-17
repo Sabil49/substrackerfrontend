@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Dark mode: status bar icons should be light (dark background) -->
+  <bool name="statusBarLightMode">false</bool>
+</resources>
