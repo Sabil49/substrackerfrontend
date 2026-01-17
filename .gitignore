@@ -45,8 +45,14 @@ yarn-error.log*
 # Firebase (sensitive credentials, never commit)
 android/app/google-services.json
 ios/GoogleService-Info.plist
+# Specific exposed file (if ever committed before being added to .gitignore)
 substracker-647d9-firebase-adminsdk-fbsvc-2725cf1aef.json
+# Wildcard patterns for all Firebase/GCP credential files
 *-firebase-adminsdk-*.json
+*-serviceAccountKey.json
+*-google-cloud-service-account.json
+*.p8
+*.p12
 
 # Metro
 .metro-health-check*

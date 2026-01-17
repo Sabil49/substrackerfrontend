@@ -47,6 +47,8 @@ export const Colors = {
     silentBg: 'rgba(239, 68, 68, 0.15)',
     worthIt: '#10B981',
     worthItBg: 'rgba(16, 185, 129, 0.15)',
+    fairValue: '#6366F1',
+    fairValueBg: 'rgba(99, 102, 241, 0.15)',
     overpriced: '#F59E0B',
     overpricedBg: 'rgba(245, 158, 11, 0.15)',
     unused: '#6B7280',

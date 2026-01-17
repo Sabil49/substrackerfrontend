@@ -100,40 +100,35 @@ android {
     }
     signingConfigs {
         debug {
+            // DEBUG KEYSTORE - LOCAL TESTING ONLY
+            // This keystore is intended ONLY for local development and debugging.
+            // DO NOT use this keystore for public distribution or production releases.
+            // For releases, use a production keystore injected via CI/CD environment variables.
             storeFile file('debug.keystore')
             storePassword 'android'
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
         release {
-            // Production keystore configuration.
-            // To generate your own keystore for production:
-            // keytool -genkey -v -keystore my-release-key.keystore -keyalg RSA -keysize 2048 -validity 10000 -alias my-key-alias
-            // Then set the following properties in gradle.properties or environment:
-            // - android.release.keystore.file
-            // - android.release.keystore.password
-            // - android.release.keystore.alias
-            // - android.release.keystore.alias.password
-            def keystoreFile = findProperty('android.release.keystore.file')
-            def keystorePassword = findProperty('android.release.keystore.password')
-            def keyAlias = findProperty('android.release.keystore.alias')
-            def keyAliasPassword = findProperty('android.release.keystore.alias.password')
-            
-            if (keystoreFile && keystorePassword && keyAlias && keyAliasPassword) {
-                storeFile file(keystoreFile)
-                storePassword keystorePassword
-                keyAlias keyAlias
-                keyPassword keyAliasPassword
-            } else if (keystoreFile) {
-                throw new GradleException("Production keystore file specified but missing required properties: " +
-                    "android.release.keystore.password, android.release.keystore.alias, android.release.keystore.alias.password")
+            // PRODUCTION KEYSTORE - CI/CD INJECTED
+            // This configuration is for production builds.
+            // The keystore credentials are provided by the CI/CD pipeline via environment variables.
+            // Credentials are sourced from environment variables or gradle.properties:
+            // - RELEASE_KEYSTORE_PATH, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD
+            def releaseKeystorePath = System.getenv('RELEASE_KEYSTORE_PATH') ?: findProperty('RELEASE_KEYSTORE_PATH')
+            def releaseKeystorePassword = System.getenv('RELEASE_KEYSTORE_PASSWORD') ?: findProperty('RELEASE_KEYSTORE_PASSWORD')
+            def releaseKeyAlias = System.getenv('RELEASE_KEY_ALIAS') ?: findProperty('RELEASE_KEY_ALIAS')
+            def releaseKeyPassword = System.getenv('RELEASE_KEY_PASSWORD') ?: findProperty('RELEASE_KEY_PASSWORD')
+
+            if (releaseKeystorePath && releaseKeystorePassword && releaseKeyAlias && releaseKeyPassword) {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
             } else {
-                // Fallback to debug keystore - WARNING: not suitable for production distribution
-                println "WARNING: No production keystore configured. Release builds will use debug keystore."
-                storeFile file('debug.keystore')
-                storePassword 'android'
-                keyAlias 'androiddebugkey'
-                keyPassword 'android'
+                // If release keystore credentials are not available, disable release signing
+                // This prevents accidentally signing with debug keystore for public distribution
+                storeFile null
             }
         }
     }
@@ -142,14 +137,15 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Use production keystore instead of debug keystore for security.
+            // PRODUCTION RELEASE BUILD
+            // This buildType uses the production keystore configured in signingConfigs.release.
+            // The keystore credentials MUST be provided by CI/CD via environment variables or gradle.properties.
+            // DO NOT commit production keystore files or credentials to version control.
+            // The build will fail safely if production credentials are not available.
             signingConfig signingConfigs.release
-            def enableMinify = enableMinifyInReleaseBuilds
-            minifyEnabled enableMinify
-            // Only enable shrinkResources if BOTH enableShrinkResourcesInReleaseBuilds is true
-            // AND minification is enabled (to avoid resource stripping without code optimization).
-            def enableShrinkResources = enableMinify && (findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false').toBoolean()
-            shrinkResources enableShrinkResources
+            def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
+            shrinkResources enableShrinkResources.toBoolean()
+            minifyEnabled enableMinifyInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             def enablePngCrunchInRelease = findProperty('android.enablePngCrunchInReleaseBuilds') ?: 'true'
             crunchPngs enablePngCrunchInRelease.toBoolean()
@@ -177,8 +173,8 @@ android {
     // `[] - ""` is essentially `[""].filter(Boolean)` removing all empty strings.
     options -= ""
 
-    if (options.size() > 0) {
-        println "android.packagingOptions.$prop += $options (${options.size()})"
+    if (options.length > 0) {
+        println "android.packagingOptions.$prop += $options ($options.length)"
         // Ex: android.packagingOptions.pickFirsts += '**/SCCS/**'
         options.each {
             android.packagingOptions[prop] += it

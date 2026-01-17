@@ -109,6 +109,10 @@ export default function HomeScreen() {
         <TouchableOpacity
           onPress={() => router.push('/settings')}
           style={styles.settingsButton}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Open settings"
+          accessibilityHint="Navigate to settings screen to manage your preferences and account"
         >
           <Ionicons name="settings-outline" size={24} color={colors.text.primary} />
         </TouchableOpacity>
@@ -140,6 +144,10 @@ export default function HomeScreen() {
             style={[styles.fab, { backgroundColor: colors.accent.primary }]}
             onPress={() => router.push('/add-subscription')}
             activeOpacity={0.8}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Add subscription"
+            accessibilityHint="Open form to add a new subscription to track"
           >
             <Ionicons name="add" size={32} color={colors.background.primary} />
           </TouchableOpacity>

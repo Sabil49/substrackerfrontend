@@ -126,14 +126,14 @@ export const subscriptionsApi = {
       } catch {
         console.warn('Invalid notifyDaysBefore format, using defaults')
       }
-    }    const payload = {
+    }
+    const payload = {
       ...data,
       notifyDaysBefore: parsedNotifyDays
     }
     const response = await api.post<{ subscription: Subscription }>('/subscriptions', payload)
     return response.data.subscription
-  },  
-  update: async (id: string, data: Partial<Subscription>) => {
+  },    update: async (id: string, data: Partial<Subscription>) => {
     const guestId = await AsyncStorage.getItem('guestId')
     const payload = guestId ? { ...data, guestId } : data
     const response = await api.patch<{ subscription: Subscription }>(`/subscriptions/${id}`, payload)

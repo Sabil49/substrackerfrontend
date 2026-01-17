@@ -66,9 +66,8 @@ export const Typography = {
   price: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: Colors.accent.primary,
-  },
-}
+    color: Colors.accent.gold,
+  },}
 
 export const Categories = [
   { id: 'entertainment', name: 'Entertainment', icon: '🎬' },

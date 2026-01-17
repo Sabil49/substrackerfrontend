@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+  <!-- Include database files (except sensitive ones) -->
+  <include domain="database" path="." />
+
+  <!-- Include shared preferences (except sensitive ones) -->
+  <include domain="sharedpref" path="." />
+
+  <!-- Include app-specific files (except sensitive ones) -->
+  <include domain="file" path="." />
+
+  <!-- Exclude sensitive token/auth files -->
+  <exclude domain="sharedpref" path="authToken*" />
+  <exclude domain="sharedpref" path="*_token*" />
+  <exclude domain="sharedpref" path="credentials*" />
+  <exclude domain="sharedpref" path="session*" />
+  <!-- Exclude encrypted secure store (expo-secure-store uses EncryptedSharedPreferences) -->
+  <exclude domain="sharedpref" path="EncryptedSharedPreferences" />
+  <exclude domain="sharedpref" path="expo-secure-store*" />
+
+  <!-- Exclude file-based sensitive data -->
+  <exclude domain="file" path="tokens/" />
+  <exclude domain="file" path="keys/" />
+  <exclude domain="file" path="secrets/" />
+  <exclude domain="file" path=".*cache/.*" />
+
+  <!-- Exclude Firebase and sensitive cache files -->
+  <exclude domain="cache" path="." />
+
+  <!-- Exclude system files and temporary data -->
+  <exclude domain="external_files" path="." />
+  <exclude domain="external_cache" path="." />
+</full-backup-content>

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -7,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import Button from '@/components/Button'
 import { userApi, User } from '@/services/api'
 import { useTheme } from '@/contexts/ThemeContext'
-import { checkNotificationPermissions, registerForPushNotifications } from '@/services/notifications'
+import { checkNotificationPermissions, registerForPushNotifications, sendPushTokenToServer, removePushTokenFromServer } from '@/services/notifications'
 
 export default function ProfileScreen() {
   const router = useRouter()
@@ -37,21 +38,60 @@ export default function ProfileScreen() {
 
   const handleNotificationToggle = async (value: boolean) => {
     if (value) {
-      const token = await registerForPushNotifications()
-      if (token) {
-        setNotificationsEnabled(true)
-      } else {
+      try {
+        const token = await registerForPushNotifications()
+        if (token) {
+          try {
+            await sendPushTokenToServer(token)
+            setNotificationsEnabled(true)
+          } catch (error) {
+            console.error('Failed to send token to server:', error)
+            Alert.alert(
+              'Server Error',
+              'Could not register device for notifications. Please try again.'
+            )
+            // Revert toggle on server failure
+            setNotificationsEnabled(false)
+          }
+        } else {
+          Alert.alert(
+            'Notifications Disabled',
+            'Please enable notifications in your device settings'
+          )
+        }
+      } catch (error) {
+        console.error('Error during push notification registration:', error)
         Alert.alert(
-          'Notifications Disabled',
-          'Please enable notifications in your device settings'
+          'Registration Error',
+          'Failed to register for notifications. Please try again.'
         )
+        setNotificationsEnabled(false)
       }
     } else {
-      setNotificationsEnabled(false)
-      Alert.alert(
-        'Disable Notifications',
-        'You can re-enable them anytime from device settings'
-      )
+      try {
+        const token = await AsyncStorage.getItem('deviceToken')
+        if (token) {
+          try {
+            await removePushTokenFromServer(token)
+          } catch (error) {
+            console.error('Failed to remove token from server:', error)
+            Alert.alert(
+              'Server Error',
+              'Could not disable notifications on server. Please try again.'
+            )
+            // Revert toggle on server failure
+            setNotificationsEnabled(true)
+            return
+          }
+        }
+        setNotificationsEnabled(false)
+      } catch (error) {
+        console.error('Error during notification removal:', error)
+        Alert.alert(
+          'Removal Error',
+          'Failed to disable notifications. Please try again.'
+        )
+      }
     }
   }
   return (

@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import Button from '@/components/Button'
 import { useTheme } from '@/contexts/ThemeContext'
+import { getAuthToken } from '@/utils/storage'
 
 const FEATURES = [
   {
@@ -98,14 +99,21 @@ export default function PremiumScreen() {
 
       // Step 2: Send receipt/transaction to backend for validation
       // Backend verifies the receipt with the payment provider and updates isPro
+      const authToken = await getAuthToken()
+      if (!authToken) {
+        throw new Error('Authentication token not found. Please log in again.')
+      }
+
       const verifyResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/user/verify-premium-purchase`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
         body: JSON.stringify({
           planId: selectedPlan,
           transactionId,
           receipt: transactionReceipt,
-          // Include auth token via interceptor or explicit header
         }),
       })
 

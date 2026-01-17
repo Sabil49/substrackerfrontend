@@ -11,6 +11,7 @@ export function formatShortDate(date: Date | string): string {
 export function formatRelativeDate(date: Date | string): string {
   const daysUntil = differenceInDays(new Date(date), new Date())
   
+  if (daysUntil < 0) return formatDate(date)
   if (daysUntil === 0) return 'Today'
   if (daysUntil === 1) return 'Tomorrow'
   if (daysUntil === 2) return 'In 2 days'
@@ -19,7 +20,6 @@ export function formatRelativeDate(date: Date | string): string {
   if (daysUntil < 30) return `In ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`  
   return formatDate(date)
 }
-
 export function getDaysUntil(date: Date | string): number {
   return differenceInDays(new Date(date), new Date())
 }

@@ -55,12 +55,24 @@ export default function AnalyticsScreen() {
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.text.primary }]}>Analytics</Text>
         </View>
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>📊</Text>
-          <Text style={[styles.emptyText, { color: colors.text.secondary }]}>
-            Add subscriptions to see your spending insights
-          </Text>
-        </View>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ flex: 1 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.accent.primary}
+            />
+          }
+        >
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyIcon}>📊</Text>
+            <Text style={[styles.emptyText, { color: colors.text.secondary }]}>
+              Add subscriptions to see your spending insights
+            </Text>
+          </View>
+        </ScrollView>
       </SafeAreaView>
     )
   }

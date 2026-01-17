@@ -49,12 +49,14 @@ export async function registerForPushNotifications() {
       throw new Error('expoProjectId is not configured in app.json')
     }
     const token = (
-  await Notifications.getExpoPushTokenAsync({
-    projectId
-  })
-).data
-    console.log('Push notification token:', token)
-    await deviceApi.register(token, Platform.OS as 'ios' | 'android')
+      await Notifications.getExpoPushTokenAsync({
+        projectId,
+      })
+    ).data
+
+    if (__DEV__) {
+      console.log('Push notification token:', token)
+    }    await deviceApi.register(token, Platform.OS as 'ios' | 'android')
     // Only persist token after successful backend registration
     await AsyncStorage.setItem('deviceToken', token)
 
@@ -132,4 +134,26 @@ export function addNotificationResponseReceivedListener(
   listener: (response: Notifications.NotificationResponse) => void
 ) {
   return Notifications.addNotificationResponseReceivedListener(listener)
+}
+
+export async function sendPushTokenToServer(token: string) {
+  try {
+    await deviceApi.register(token, Platform.OS as 'ios' | 'android')
+    await AsyncStorage.setItem('deviceToken', token)
+    console.log('Push token sent to server successfully')
+  } catch (error) {
+    console.error('Failed to send push token to server:', error)
+    throw error
+  }
+}
+
+export async function removePushTokenFromServer(token: string) {
+  try {
+    await deviceApi.unregister(token)
+    await AsyncStorage.removeItem('deviceToken')
+    console.log('Push token removed from server successfully')
+  } catch (error) {
+    console.error('Failed to remove push token from server:', error)
+    throw error
+  }
 }

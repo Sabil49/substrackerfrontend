@@ -54,16 +54,15 @@ export default function SubscriptionDetailScreen() {
   }, [subscription, fadeAnim])
 
   const handleMarkReviewed = async () => {
-    if (!subscription) return
+    if (!subscription || !id) return
     try {
-      const updated = await subscriptionsApi.markReviewed(id!)
+      const updated = await subscriptionsApi.markReviewed(id)
       setSubscription(updated)
       Alert.alert('✓ Reviewed', 'Subscription marked as reviewed')
     } catch {
       Alert.alert('Error', 'Failed to mark as reviewed')
     }
   }
-
   const handleLogUsage = async () => {
     if (!subscription) return
     try {
@@ -132,12 +131,26 @@ export default function SubscriptionDetailScreen() {
   }
 
   const getValueScoreInfo = () => {
-    const costPerUse = getCostPerUse()
-    if (!costPerUse) return { label: 'No usage data yet', color: colors.text.muted }
+    if (!subscription || !subscription.usageCount || subscription.usageCount === 0) {
+      return { label: 'No usage data yet', color: colors.text.muted }
+    }
     
-    const cpu = subscription!.amount / (subscription!.usageCount || 1)
-    if (cpu < 5) return { label: '✓ Worth it - Great value', color: colors.badge.worthIt }
-    if (cpu < 10) return { label: '○ Fair value', color: colors.badge.overpriced }
+    // Use currency-agnostic percentage-based scoring
+    // costPerUse / totalAmount = percentage of subscription cost per use
+    // This works for any currency without needing conversion
+    const costPerUse = subscription.amount / subscription.usageCount
+    const percentageOfTotal = costPerUse / subscription.amount
+    
+    // Thresholds based on percentage of subscription amount:
+    // < 0.05 (5%) = Worth it - Great value (highly reusable)
+    // < 0.20 (20%) = Fair value (moderate reuse)
+    // >= 0.20 (20%) = Overpriced (low reuse, high cost per use)
+    if (percentageOfTotal < 0.05) {
+      return { label: '✓ Worth it - Great value', color: colors.badge.worthIt }
+    }
+    if (percentageOfTotal < 0.20) {
+      return { label: '○ Fair value', color: colors.badge.fairValue }
+    }
     return { label: '! Overpriced - Consider canceling', color: colors.badge.overpriced }
   }
 
@@ -292,14 +305,13 @@ export default function SubscriptionDetailScreen() {
               </Text>
             </View>
 
-            <View style={styles.infoRow}>
+            <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
               <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Started</Text>
               <Text style={[styles.infoValue, { color: colors.text.primary }]}>
                 {formatDate(subscription.startDate)}
               </Text>
             </View>
           </View>
-
           {!subscription.isCanceled && (
             <View style={[styles.section, { backgroundColor: colors.background.card }]}>
               <View style={styles.sectionHeader}>
