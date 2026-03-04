@@ -80,6 +80,11 @@ export default function PremiumScreen() {
   const [loading, setLoading] = useState(false);
   const [iapInitialized, setIapInitialized] = useState(false);
 
+  React.useEffect(() => {
+    console.log("✅ RNIap loaded:", RNIap);
+    // If you see this log, IAP is working
+  }, []);
+
   // listen to IAP events so we can handle purchase results
   React.useEffect(() => {
     const purchaseUpdateSub = RNIap.purchaseUpdatedListener(
