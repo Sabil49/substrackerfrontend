@@ -1,208 +1,374 @@
-import React, { useState } from 'react'
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native'
-import { useRouter } from 'expo-router'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { LinearGradient } from 'expo-linear-gradient'
-import { Ionicons } from '@expo/vector-icons'
-import Button from '@/components/Button'
-import { useTheme } from '@/contexts/ThemeContext'
-import { getAuthToken } from '@/utils/storage'
+// app/premium.tsx
+import Button from "@/components/Button";
+import { useTheme } from "@/contexts/ThemeContext";
+import { getAuthToken } from "@/utils/storage";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
+import React, { useState } from "react";
+import {
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import * as RNIap from "react-native-iap";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const FEATURES = [
   {
-    icon: '∞',
-    title: 'Unlimited Subscriptions',
-    description: 'Track as many subscriptions as you need',
+    icon: "∞",
+    title: "Unlimited Subscriptions",
+    description: "Track as many subscriptions as you need",
   },
   {
-    icon: '🔔',
-    title: 'Smart Reminders',
-    description: 'Advanced notification system',
+    icon: "🔔",
+    title: "Smart Reminders",
+    description: "Advanced notification system",
   },
   {
-    icon: '📊',
-    title: 'Advanced Analytics',
-    description: 'Detailed spending insights and trends',
+    icon: "📊",
+    title: "Advanced Analytics",
+    description: "Detailed spending insights and trends",
   },
   {
-    icon: '☁️',
-    title: 'Cloud Backup',
-    description: 'Never lose your subscription data',
+    icon: "☁️",
+    title: "Cloud Backup",
+    description: "Never lose your subscription data",
   },
   {
-    icon: '🎨',
-    title: 'Custom Categories',
-    description: 'Organize subscriptions your way',
+    icon: "🎨",
+    title: "Custom Categories",
+    description: "Organize subscriptions your way",
   },
   {
-    icon: '📱',
-    title: 'Multi-Device Sync',
-    description: 'Access your data anywhere',
+    icon: "📱",
+    title: "Multi-Device Sync",
+    description: "Access your data anywhere",
   },
-]
+];
+
+const PRODUCT_IDS: Record<string, string> = {
+  monthly: "com.substracker.monthly",
+  yearly: "com.substracker.yearly",
+};
 
 const PLANS = [
   {
-    id: 'monthly',
-    name: 'Monthly',
-    price: '$4.99',
-    period: '/month',
+    id: "monthly",
+    name: "Monthly",
+    price: "$4.99",
+    period: "/month",
     popular: false,
   },
   {
-    id: 'yearly',
-    name: 'Yearly',
-    price: '$39.99',
-    period: '/year',
+    id: "yearly",
+    name: "Yearly",
+    price: "$39.99",
+    period: "/year",
     popular: true,
-    savings: 'Save 33%',
+    savings: "Save 33%",
   },
-]
+];
 
 export default function PremiumScreen() {
-  const router = useRouter()
-  const { colors } = useTheme()
-  const [selectedPlan, setSelectedPlan] = useState('yearly')
-  const [loading, setLoading] = useState(false)
+  const router = useRouter();
+  const { colors } = useTheme();
+  const [selectedPlan, setSelectedPlan] = useState("yearly");
+  const [loading, setLoading] = useState(false);
+  const [iapInitialized, setIapInitialized] = useState(false);
+
+  // listen to IAP events so we can handle purchase results
+  React.useEffect(() => {
+    const purchaseUpdateSub = RNIap.purchaseUpdatedListener(
+      async (purchase) => {
+        console.log("IAP purchase updated", purchase);
+        try {
+          const authToken = await getAuthToken();
+          if (!authToken) {
+            console.warn(
+              "Received purchase update but no auth token available",
+            );
+            return;
+          }
+
+          if (process.env.EXPO_PUBLIC_PAYMENT_ENABLED) {
+            // send receipt to backend for verification
+            const verifyResponse = await fetch(
+              `${process.env.EXPO_PUBLIC_API_URL}/api/user/verify-premium-purchase`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${authToken}`,
+                },
+                body: JSON.stringify({
+                  planId: selectedPlan,
+                  transactionId:
+                    purchase.transactionId || purchase.purchaseToken,
+                  receipt:
+                    (purchase as any).transactionReceipt ||
+                    purchase.transactionId ||
+                    purchase.purchaseToken,
+                }),
+              },
+            );
+
+            if (verifyResponse.ok) {
+              const verifyData = await verifyResponse.json();
+              if (verifyData.isPro) {
+                Alert.alert("Success", "Successfully upgraded to Premium!", [
+                  { text: "OK", onPress: () => router.back() },
+                ]);
+              } else {
+                Alert.alert(
+                  "Error",
+                  "Payment verified but premium was not granted. Please contact support.",
+                );
+              }
+            } else {
+              const errorData = await verifyResponse.json().catch(() => ({}));
+              Alert.alert(
+                "Verification failed",
+                errorData.message ||
+                  "An error occurred verifying your purchase. Please contact support.",
+              );
+            }
+          } else {
+            // development mode - just simulate success
+            Alert.alert("Success", "Premium feature enabled (dev mode)", [
+              { text: "OK", onPress: () => router.back() },
+            ]);
+          }
+        } catch (e) {
+          console.error("Error processing purchase update", e);
+          Alert.alert(
+            "Purchase error",
+            "There was a problem processing your purchase. Please try again later.",
+          );
+        }
+      },
+    );
+
+    const purchaseErrorSub = RNIap.purchaseErrorListener((error) => {
+      console.warn("IAP purchase error", error);
+      Alert.alert(
+        "Purchase error",
+        error.message || "An error occurred during purchase.",
+      );
+    });
+
+    return () => {
+      purchaseUpdateSub.remove();
+      purchaseErrorSub.remove();
+      RNIap.endConnection();
+    };
+  }, [selectedPlan, router]);
 
   const handleUpgrade = async () => {
-    setLoading(true)
+    // ensure IAP connection alive
+    if (!iapInitialized) {
+      try {
+        await RNIap.initConnection();
+        setIapInitialized(true);
+      } catch (err) {
+        console.error("RNIap init failed", err);
+      }
+    }
+    setLoading(true);
     try {
+      // Check authentication first — guests cannot purchase premium
+      const authToken = await getAuthToken();
+      if (!authToken) {
+        Alert.alert(
+          "Sign In Required",
+          "You need to create an account or sign in to upgrade to Premium. Your existing subscriptions will be transferred to your account.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Sign In",
+              onPress: () => router.push("/login?redirect=/premium"),
+            },
+          ],
+        );
+        return;
+      }
+
       // TODO: PAYMENT INTEGRATION REQUIRED
       // This is a placeholder implementation. Before going live, integrate a real payment provider:
       // - Option 1: RevenueCat (https://www.revenuecat.com/) - recommended for mobile apps
       // - Option 2: Stripe with in-app purchases
       // - Option 3: Native IAP (Google Play Billing or Apple StoreKit)
-      // The pattern below shows the expected flow.
 
-      // Step 1: Initiate payment with the selected plan
-      let transactionReceipt: string | null = null
-      let transactionId: string | null = null
-
+      // dev branch variables are no longer needed; listener will handle success
       if (!process.env.EXPO_PUBLIC_PAYMENT_ENABLED) {
-        // Development mode: bypass payment (remove before production)
-        console.warn('[handleUpgrade] Payment is disabled in development. This must be enabled for production.')
-        transactionReceipt = 'dev-receipt-' + Date.now()
-        transactionId = 'dev-' + selectedPlan + '-' + Date.now()
+        console.warn(
+          "[handleUpgrade] Payment is disabled in development. This must be enabled for production.",
+        );
       } else {
-        // IMPLEMENT: Call your payment provider here
-        // Example with RevenueCat (pseudo-code):
-        // const result = await Purchases.purchasePackage(packageToPurchase)
-        // transactionReceipt = result.productIdentifier
-        // transactionId = result.transaction?.transactionIdentifier
-
-        // For now, throw an error to prevent accidental premium grants
-        throw new Error(
-          'Payment integration not yet implemented. Set up RevenueCat, Stripe, or native IAP before enabling EXPO_PUBLIC_PAYMENT_ENABLED.'
-        )
+        // use react-native-iap to purchase subscription
+        try {
+          const productId =
+            PRODUCT_IDS[selectedPlan as keyof typeof PRODUCT_IDS];
+          // For subscriptions, we use the generic requestPurchase API with type 'subs'.
+          await RNIap.requestPurchase({
+            request: {
+              google: { skus: [productId] },
+            },
+            type: "subs",
+          });
+          // actual transaction details are available via purchaseUpdatedListener
+          // we'll handle receipt/transaction in a listener or server-side verification
+          console.log("Requested subscription for", productId);
+        } catch (iapError) {
+          console.error("[handleUpgrade] IAP error", iapError);
+          throw new Error("Purchase failed. Please try again.");
+        }
       }
 
-      // Step 2: Send receipt/transaction to backend for validation
-      // Backend verifies the receipt with the payment provider and updates isPro
-      const authToken = await getAuthToken()
-      if (!authToken) {
-        throw new Error('Authentication token not found. Please log in again.')
-      }
-
-      const verifyResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/user/verify-premium-purchase`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          planId: selectedPlan,
-          transactionId,
-          receipt: transactionReceipt,
-        }),
-      })
-
-      if (!verifyResponse.ok) {
-        const errorData = await verifyResponse.json().catch(() => ({}))
-        throw new Error(
-          errorData.message || 'Payment verification failed. Please contact support if the charge was applied.'
-        )
-      }
-
-      const verifyData = await verifyResponse.json()
-
-      // Step 3: On successful backend verification, alert user and navigate
-      if (verifyData.isPro) {
-        Alert.alert('Success', 'Successfully upgraded to Premium!', [
-          { text: 'OK', onPress: () => router.back() },
-        ])
-      } else {
-        throw new Error('Payment verified but user not granted premium status. Please contact support.')
+      // For production we now handle receipt verification inside
+      // the purchaseUpdatedListener registered above.  The listener
+      // will send the purchase details to the backend and navigate
+      // when the upgrade completes.  No further action is required here.
+      if (!process.env.EXPO_PUBLIC_PAYMENT_ENABLED) {
+        // skip server verification in dev mode
+        console.warn(
+          "[handleUpgrade] development mode - skipping verification and simulating success",
+        );
+        Alert.alert("Success", "Premium feature enabled (dev mode)", [
+          { text: "OK", onPress: () => router.back() },
+        ]);
       }
     } catch (error) {
-      console.error('[handleUpgrade] Error:', error)
+      console.error("[handleUpgrade] Error:", error);
       const errorMessage =
         error instanceof Error
           ? error.message
-          : 'Failed to complete upgrade. Please try again or contact support.'
-      Alert.alert('Error', errorMessage)
+          : "Failed to complete upgrade. Please try again or contact support.";
+      Alert.alert("Error", errorMessage);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background.primary }]} edges={['top']}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background.primary }]}
+      edges={["top"]}
+    >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
           <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Premium</Text>
+        <Text style={[styles.headerTitle, { color: colors.text.primary }]}>
+          Premium
+        </Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+      >
         <LinearGradient
-          colors={colors.gradient.accent as readonly [string, string, ...string[]]}
+          colors={
+            colors.gradient.accent as readonly [string, string, ...string[]]
+          }
           style={styles.heroCard}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
           <Text style={styles.heroIcon}>⭐</Text>
           <Text style={styles.heroTitle}>Upgrade to Premium</Text>
-          <Text style={styles.heroSubtitle}>Unlock all features and take full control</Text>
+          <Text style={styles.heroSubtitle}>
+            Unlock all features and take full control
+          </Text>
         </LinearGradient>
 
         <View style={styles.plansSection}>
-          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Choose Your Plan</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
+            Choose Your Plan
+          </Text>
           {PLANS.map((plan) => (
             <TouchableOpacity
               key={plan.id}
               style={[
                 styles.planCard,
-                { 
+                {
                   backgroundColor: colors.background.card,
-                  borderColor: selectedPlan === plan.id ? colors.accent.primary : colors.border.default,
+                  borderColor:
+                    selectedPlan === plan.id
+                      ? colors.accent.primary
+                      : colors.border.default,
                   borderWidth: selectedPlan === plan.id ? 2 : 1,
-                }
+                },
               ]}
               onPress={() => setSelectedPlan(plan.id)}
             >
               {plan.popular && (
-                <View style={[styles.popularBadge, { backgroundColor: colors.accent.primary }]}>
+                <View
+                  style={[
+                    styles.popularBadge,
+                    { backgroundColor: colors.accent.primary },
+                  ]}
+                >
                   <Text style={styles.popularText}>BEST VALUE</Text>
                 </View>
               )}
               <View style={styles.planHeader}>
                 <View style={styles.planInfo}>
-                  <Text style={[styles.planName, { color: colors.text.primary }]}>{plan.name}</Text>
-                  {plan.savings && (
-                    <Text style={[styles.savings, { color: colors.status.success }]}>{plan.savings}</Text>
+                  <Text
+                    style={[styles.planName, { color: colors.text.primary }]}
+                  >
+                    {plan.name}
+                  </Text>
+                  {"savings" in plan && plan.savings && (
+                    <Text
+                      style={[styles.savings, { color: colors.status.success }]}
+                    >
+                      {plan.savings}
+                    </Text>
                   )}
                 </View>
                 <View style={styles.planPricing}>
-                  <Text style={[styles.planPrice, { color: colors.text.primary }]}>{plan.price}</Text>
-                  <Text style={[styles.planPeriod, { color: colors.text.secondary }]}>{plan.period}</Text>
+                  <Text
+                    style={[styles.planPrice, { color: colors.text.primary }]}
+                  >
+                    {plan.price}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.planPeriod,
+                      { color: colors.text.secondary },
+                    ]}
+                  >
+                    {plan.period}
+                  </Text>
                 </View>
               </View>
-              <View style={[styles.radioOuter, { borderColor: selectedPlan === plan.id ? colors.accent.primary : colors.border.default }]}>
+              <View
+                style={[
+                  styles.radioOuter,
+                  {
+                    borderColor:
+                      selectedPlan === plan.id
+                        ? colors.accent.primary
+                        : colors.border.default,
+                  },
+                ]}
+              >
                 {selectedPlan === plan.id && (
-                  <View style={[styles.radioInner, { backgroundColor: colors.accent.primary }]} />
+                  <View
+                    style={[
+                      styles.radioInner,
+                      { backgroundColor: colors.accent.primary },
+                    ]}
+                  />
                 )}
               </View>
             </TouchableOpacity>
@@ -210,13 +376,30 @@ export default function PremiumScreen() {
         </View>
 
         <View style={styles.featuresSection}>
-          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Everything Included</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
+            Everything Included
+          </Text>
           {FEATURES.map((feature, index) => (
-            <View key={index} style={[styles.featureRow, { backgroundColor: colors.background.card }]}>
+            <View
+              key={index}
+              style={[
+                styles.featureRow,
+                { backgroundColor: colors.background.card },
+              ]}
+            >
               <Text style={styles.featureIcon}>{feature.icon}</Text>
               <View style={styles.featureText}>
-                <Text style={[styles.featureTitle, { color: colors.text.primary }]}>{feature.title}</Text>
-                <Text style={[styles.featureDescription, { color: colors.text.secondary }]}>
+                <Text
+                  style={[styles.featureTitle, { color: colors.text.primary }]}
+                >
+                  {feature.title}
+                </Text>
+                <Text
+                  style={[
+                    styles.featureDescription,
+                    { color: colors.text.secondary },
+                  ]}
+                >
                   {feature.description}
                 </Text>
               </View>
@@ -231,173 +414,110 @@ export default function PremiumScreen() {
           style={styles.upgradeButton}
         />
 
-        <Text style={[styles.disclaimer, { color: colors.text.muted }]}>
-          Cancel anytime. No questions asked.
+        <Text style={[styles.terms, { color: colors.text.muted }]}>
+          By continuing, you agree to our Terms of Service and Privacy Policy.
+          Subscriptions auto-renew unless cancelled.
         </Text>
       </ScrollView>
     </SafeAreaView>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 100,
-  },
+  backButton: { width: 40, height: 40, justifyContent: "center" },
+  headerTitle: { fontSize: 20, fontWeight: "700", letterSpacing: 0.3 },
+  scrollView: { flex: 1 },
+  content: { padding: 16, paddingBottom: 40 },
   heroCard: {
-    borderRadius: 24,
+    borderRadius: 28,
     padding: 40,
-    alignItems: 'center',
-    marginBottom: 24,
+    alignItems: "center",
+    marginBottom: 28,
   },
-  heroIcon: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
+  heroIcon: { fontSize: 56, marginBottom: 16 },
   heroTitle: {
     fontSize: 28,
-    fontWeight: '800',
-    color: '#FFF',
+    fontWeight: "800",
+    color: "#FFF",
     marginBottom: 8,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+    textAlign: "center",
   },
   heroSubtitle: {
     fontSize: 16,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.9)',
-    textAlign: 'center',
+    fontWeight: "500",
+    color: "rgba(255,255,255,0.85)",
+    textAlign: "center",
   },
-  plansSection: {
-    marginBottom: 24,
-  },
+  plansSection: { marginBottom: 28 },
   sectionTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 16,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   planCard: {
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 12,
-    position: 'relative',
+    position: "relative",
   },
   popularBadge: {
-    position: 'absolute',
-    top: -8,
+    position: "absolute",
+    top: -10,
     right: 16,
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 10,
   },
   popularText: {
-    color: '#FFF',
+    color: "#FFF",
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "800",
     letterSpacing: 0.5,
   },
   planHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
-  planInfo: {
-    flex: 1,
-  },
-  planName: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  savings: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  planPricing: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  planPrice: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  planPeriod: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 2,
-  },
+  planInfo: { flex: 1 },
+  planName: { fontSize: 18, fontWeight: "700", marginBottom: 4 },
+  savings: { fontSize: 13, fontWeight: "600" },
+  planPricing: { alignItems: "flex-end" },
+  planPrice: { fontSize: 24, fontWeight: "800", letterSpacing: 0.3 },
+  planPeriod: { fontSize: 13, fontWeight: "500" },
   radioOuter: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
-  radioInner: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-  },
-  featuresSection: {
-    marginBottom: 24,
-  },
+  radioInner: { width: 12, height: 12, borderRadius: 6 },
+  featuresSection: { marginBottom: 28 },
   featureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
+    borderRadius: 16,
+    marginBottom: 10,
+    gap: 14,
   },
-  featureIcon: {
-    fontSize: 28,
-    marginRight: 12,
-  },
-  featureText: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  featureDescription: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  upgradeButton: {
-    marginBottom: 16,
-  },
-  disclaimer: {
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-})
+  featureIcon: { fontSize: 28 },
+  featureText: { flex: 1 },
+  featureTitle: { fontSize: 15, fontWeight: "700", marginBottom: 3 },
+  featureDescription: { fontSize: 13, fontWeight: "400", lineHeight: 18 },
+  upgradeButton: { marginBottom: 16 },
+  terms: { fontSize: 12, textAlign: "center", lineHeight: 18 },
+});

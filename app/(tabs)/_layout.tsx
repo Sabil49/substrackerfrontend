@@ -1,12 +1,13 @@
-import { Tabs } from 'expo-router'
-import { Ionicons } from '@expo/vector-icons'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useTheme } from '@/contexts/ThemeContext'
+// app/(tabs)/_layout.tsx
+import { useTheme } from "@/contexts/ThemeContext";
+import { Ionicons } from "@expo/vector-icons";
+import { Tabs } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function TabsLayout() {
-  const insets = useSafeAreaInsets()
-  const { colors } = useTheme()
-  
+  const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+
   return (
     <Tabs
       screenOptions={{
@@ -23,7 +24,7 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.text.muted,
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '500',
+          fontWeight: "500",
           marginBottom: 4,
         },
       }}
@@ -31,7 +32,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Subscriptions',
+          title: "Subscriptions",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="list" size={size} color={color} />
           ),
@@ -40,7 +41,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="analytics"
         options={{
-          title: 'Analytics',
+          title: "Analytics",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="analytics" size={size} color={color} />
           ),
@@ -49,12 +50,12 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: "Profile",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
           ),
         }}
       />
     </Tabs>
-  )
+  );
 }

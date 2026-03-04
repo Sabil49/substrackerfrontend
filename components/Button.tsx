@@ -1,28 +1,36 @@
-import React from 'react'
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle } from 'react-native'
-import { LinearGradient } from 'expo-linear-gradient'
-import { Colors, BorderRadius, Typography } from '@/constants/theme'
+// app/components/Button.tsx
+import { BorderRadius, Colors, Typography } from "@/constants/theme";
+import { LinearGradient } from "expo-linear-gradient";
+import React from "react";
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TextStyle,
+  TouchableOpacity,
+  ViewStyle,
+} from "react-native";
 
 interface ButtonProps {
-  title: string
-  onPress: () => void
-  variant?: 'primary' | 'secondary'
-  disabled?: boolean
-  loading?: boolean
-  style?: ViewStyle
-  textStyle?: TextStyle
+  title: string;
+  onPress: () => void;
+  variant?: "primary" | "secondary";
+  disabled?: boolean;
+  loading?: boolean;
+  style?: ViewStyle;
+  textStyle?: TextStyle;
 }
 
 export default function Button({
   title,
   onPress,
-  variant = 'primary',
+  variant = "primary",
   disabled = false,
   loading = false,
   style,
   textStyle,
 }: ButtonProps) {
-  if (variant === 'primary') {
+  if (variant === "primary") {
     return (
       <TouchableOpacity
         onPress={onPress}
@@ -43,14 +51,19 @@ export default function Button({
           )}
         </LinearGradient>
       </TouchableOpacity>
-    )
+    );
   }
 
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled || loading}
-      style={[styles.button, styles.secondaryButton, disabled && styles.disabled, style]}
+      style={[
+        styles.button,
+        styles.secondaryButton,
+        disabled && styles.disabled,
+        style,
+      ]}
       activeOpacity={0.8}
     >
       {loading ? (
@@ -59,29 +72,29 @@ export default function Button({
         <Text style={[styles.secondaryText, textStyle]}>{title}</Text>
       )}
     </TouchableOpacity>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
   button: {
     height: 56,
     borderRadius: BorderRadius.medium,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   gradient: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   primaryText: {
     ...Typography.body,
-    fontWeight: '600',
+    fontWeight: "600",
     color: Colors.text.primary,
   },
   secondaryButton: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "transparent",
   },
   secondaryText: {
     ...Typography.body,
@@ -90,4 +103,4 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.5,
   },
-})
+});

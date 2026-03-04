@@ -13,7 +13,8 @@
     },
     "android": {
       "package": "com.sabil.frontend",
-      "googleServicesFile": "./android/app/google-services.json",
+      "versionCode": 1,
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -52,18 +53,32 @@
         "expo-build-properties",
         {
           "android": {
-            "useProguard": true
+            "useProguard": true,
+            "newArchEnabled": true,
+            "minSdkVersion": 23
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "react-native-iap",
+        {
+          "android": {
+            "newArchEnabled": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
     "extra": {
-      "expoProjectId": "97f5f3a0-8256-4e8f-9d0a-0d907322bbd8"
+      "expoProjectId": "97f5f3a0-8256-4e8f-9d0a-0d907322bbd8",
+      "router": {},
+      "eas": {
+        "projectId": "97f5f3a0-8256-4e8f-9d0a-0d907322bbd8"
+      }
     }
   }
 }

@@ -1,143 +1,201 @@
-import React, { useState, useEffect } from 'react'
+// app/add-subscription.tsx
+import Button from "@/components/Button";
+import { BillingCycles, Categories } from "@/constants/theme";
+import { useTheme } from "@/contexts/ThemeContext";
+import { subscriptionsApi, Template, templatesApi } from "@/services/api";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
+  Alert,
   ScrollView,
+  StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
-  Alert,
-} from 'react-native'
-import { useRouter } from 'expo-router'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { Ionicons } from '@expo/vector-icons'
-import Button from '@/components/Button'
-import { subscriptionsApi, templatesApi, Template } from '@/services/api'
-import { useTheme } from '@/contexts/ThemeContext'
-import { Categories, BillingCycles } from '@/constants/theme'
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function AddSubscriptionScreen() {
-  const router = useRouter()
-  const { colors } = useTheme()
-  const [templates, setTemplates] = useState<Template[]>([])
-  const [name, setName] = useState('')
-  const [amount, setAmount] = useState('')
-  const [currency] = useState('USD')
-  const [billingCycle, setBillingCycle] = useState('monthly')
-  const [customDays, setCustomDays] = useState('')
-  const [category, setCategory] = useState('')
-  const [startDate] = useState(new Date())
-  const [isTrial] = useState(false)
-  const [notifyDays] = useState<number[]>([7, 3, 1, 0])
-  const [notes, setNotes] = useState('')
-  const [loading, setLoading] = useState(false)
+  const router = useRouter();
+  const { colors } = useTheme();
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [name, setName] = useState("");
+  const [amount, setAmount] = useState("");
+  const [currency] = useState("USD");
+  const [billingCycle, setBillingCycle] = useState("monthly");
+  const [customDays, setCustomDays] = useState("");
+  const [category, setCategory] = useState("");
+  const [startDate] = useState(new Date());
+  const [isTrial] = useState(false);
+  const [notifyDays] = useState<number[]>([7, 3, 1, 0]);
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadTemplates()
-  }, [])
+    loadTemplates();
+  }, []);
 
   const loadTemplates = async () => {
     try {
-      const data = await templatesApi.getAll()
-      setTemplates(data)
+      const data = await templatesApi.getAll();
+      setTemplates(data);
     } catch {
-      console.error('Failed to load templates')
+      console.error("Failed to load templates");
     }
-  }
+  };
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      Alert.alert('Error', 'Please enter a subscription name')
-      return
+      Alert.alert("Error", "Please enter a subscription name");
+      return;
     }
 
-    // Parse amount once and validate it's a finite number greater than 0
-    const parsedAmount = parseFloat(amount)
+    const parsedAmount = parseFloat(amount);
     if (!amount || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount')
-      return
+      Alert.alert("Error", "Please enter a valid amount");
+      return;
     }
 
-    // Parse customDays if needed
-    const parsedCustomDays = billingCycle === 'custom' ? parseInt(customDays, 10) : undefined
-    if (billingCycle === 'custom' && (!Number.isFinite(parsedCustomDays) || parsedCustomDays! <= 0)) {
-      Alert.alert('Error', 'Please enter a valid number of days')
-      return
+    const parsedCustomDays =
+      billingCycle === "custom" ? parseInt(customDays, 10) : undefined;
+    if (
+      billingCycle === "custom" &&
+      (!Number.isFinite(parsedCustomDays) || parsedCustomDays! <= 0)
+    ) {
+      Alert.alert("Error", "Please enter a valid number of days");
+      return;
     }
 
-    setLoading(true)
+    setLoading(true);
 
     try {
       await subscriptionsApi.create({
         name: name.trim(),
         amount: parsedAmount,
         currency,
-        billingCycle,
+        // toUpperCase() fixes the lowercase vs UPPERCASE mismatch with backend Zod schema
+        billingCycle: billingCycle.toUpperCase(),
         customCycleDays: parsedCustomDays || undefined,
-        category: category || 'Other',
+        category: category || "Other",
         startDate: startDate.toISOString(),
         isTrial,
-        notifyDaysBefore: JSON.stringify(notifyDays),
+        // Pass array directly — backend expects z.array(z.number()), not a JSON string
+        notifyDaysBefore: notifyDays,
         notes: notes.trim() || undefined,
         isActive: true,
-      })
+      });
 
-      Alert.alert('Success', 'Subscription added successfully')
-      router.back()
+      Alert.alert("Success", "Subscription added successfully");
+      router.back();
     } catch (error: any) {
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to add subscription'
-      Alert.alert('Error', errorMessage)
+      const errorMessage =
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to add subscription";
+      Alert.alert("Error", errorMessage);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background.primary }]} edges={['top']}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background.primary }]}
+      edges={["top"]}
+    >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
           <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text.primary }]}>Add Subscription</Text>
+        <Text style={[styles.title, { color: colors.text.primary }]}>
+          Add Subscription
+        </Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+      >
         {templates.length > 0 && (
           <View style={styles.templatesSection}>
-            <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>Quick Add</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templatesScroll}>
+            <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>
+              Quick Add
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.templatesScroll}
+            >
               {templates.map((template) => (
                 <TouchableOpacity
                   key={template.id}
-                  style={[styles.templateCard, { backgroundColor: colors.background.card }]}
+                  style={[
+                    styles.templateCard,
+                    { backgroundColor: colors.background.card },
+                  ]}
                   onPress={() => {
-                    setName(template.name)
-                    // Only set properties if they exist on template
-                    if ('suggestedAmount' in template && typeof template.suggestedAmount === 'number') {
-                      setAmount(template.suggestedAmount.toString())
+                    setName(template.name);
+                    if (
+                      "suggestedAmount" in template &&
+                      typeof template.suggestedAmount === "number"
+                    ) {
+                      setAmount(template.suggestedAmount.toString());
+                    } else if (template.avgPrice) {
+                      setAmount(template.avgPrice.toString());
                     }
-                    if ('category' in template && typeof template.category === 'string') {
-                      setCategory(template.category)
+                    if (
+                      "category" in template &&
+                      typeof template.category === "string"
+                    ) {
+                      setCategory(template.category.toLowerCase());
                     }
-                    if ('billingCycle' in template && typeof template.billingCycle === 'string') {
-                      setBillingCycle(template.billingCycle)
+                    if (
+                      "billingCycle" in template &&
+                      typeof template.billingCycle === "string"
+                    ) {
+                      setBillingCycle(template.billingCycle.toLowerCase());
                     }
-                 }}
+                  }}
                 >
-                  <Text style={styles.templateIcon}>{template.iconUrl || '📱'}</Text>
-                  <Text style={[styles.templateName, { color: colors.text.primary }]}>{template.name}</Text>
+                  <Text style={styles.templateIcon}>
+                    {template.iconUrl || "📱"}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.templateName,
+                      { color: colors.text.primary },
+                    ]}
+                  >
+                    {template.name}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
           </View>
         )}
 
-        <View style={[styles.form, { backgroundColor: colors.background.card }]}>
+        <View
+          style={[styles.form, { backgroundColor: colors.background.card }]}
+        >
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>Subscription Name *</Text>
+            <Text style={[styles.label, { color: colors.text.primary }]}>
+              Subscription Name *
+            </Text>
             <TextInput
-              style={[styles.input, { backgroundColor: colors.background.elevated, color: colors.text.primary, borderColor: colors.border.default }]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.background.elevated,
+                  color: colors.text.primary,
+                  borderColor: colors.border.default,
+                },
+              ]}
               value={name}
               onChangeText={setName}
               placeholder="e.g., Netflix, Spotify"
@@ -147,9 +205,18 @@ export default function AddSubscriptionScreen() {
 
           <View style={styles.inputRow}>
             <View style={[styles.inputGroup, { flex: 2 }]}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Amount *</Text>
+              <Text style={[styles.label, { color: colors.text.primary }]}>
+                Amount *
+              </Text>
               <TextInput
-                style={[styles.input, { backgroundColor: colors.background.elevated, color: colors.text.primary, borderColor: colors.border.default }]}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.background.elevated,
+                    color: colors.text.primary,
+                    borderColor: colors.border.default,
+                  },
+                ]}
                 value={amount}
                 onChangeText={setAmount}
                 placeholder="0.00"
@@ -159,33 +226,59 @@ export default function AddSubscriptionScreen() {
             </View>
 
             <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Currency</Text>
-              <View style={[styles.pickerContainer, { backgroundColor: colors.background.elevated, borderColor: colors.border.default }]}>
-                <Text style={[styles.pickerText, { color: colors.text.primary }]}>{currency}</Text>
+              <Text style={[styles.label, { color: colors.text.primary }]}>
+                Currency
+              </Text>
+              <View
+                style={[
+                  styles.pickerContainer,
+                  {
+                    backgroundColor: colors.background.elevated,
+                    borderColor: colors.border.default,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.pickerText, { color: colors.text.primary }]}
+                >
+                  {currency}
+                </Text>
               </View>
             </View>
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>Billing Cycle *</Text>
+            <Text style={[styles.label, { color: colors.text.primary }]}>
+              Billing Cycle *
+            </Text>
             <View style={styles.cycleButtons}>
               {BillingCycles.map((cycle) => (
                 <TouchableOpacity
                   key={cycle.id}
                   style={[
                     styles.cycleButton,
-                    { backgroundColor: colors.background.elevated, borderColor: colors.border.default },
-                    billingCycle === cycle.id && { 
+                    {
+                      backgroundColor: colors.background.elevated,
+                      borderColor: colors.border.default,
+                    },
+                    billingCycle === cycle.id && {
                       borderColor: colors.accent.primary,
-                      backgroundColor: colors.badge.worthItBg
-                    }
+                      backgroundColor: colors.badge.worthItBg,
+                    },
                   ]}
                   onPress={() => setBillingCycle(cycle.id)}
                 >
-                  <Text style={[
-                    styles.cycleButtonText,
-                    { color: billingCycle === cycle.id ? colors.accent.primary : colors.text.primary }
-                  ]}>
+                  <Text
+                    style={[
+                      styles.cycleButtonText,
+                      {
+                        color:
+                          billingCycle === cycle.id
+                            ? colors.accent.primary
+                            : colors.text.primary,
+                      },
+                    ]}
+                  >
                     {cycle.name}
                   </Text>
                 </TouchableOpacity>
@@ -193,11 +286,20 @@ export default function AddSubscriptionScreen() {
             </View>
           </View>
 
-          {billingCycle === 'custom' && (
+          {billingCycle === "custom" && (
             <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Custom Days</Text>
+              <Text style={[styles.label, { color: colors.text.primary }]}>
+                Custom Days
+              </Text>
               <TextInput
-                style={[styles.input, { backgroundColor: colors.background.elevated, color: colors.text.primary, borderColor: colors.border.default }]}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.background.elevated,
+                    color: colors.text.primary,
+                    borderColor: colors.border.default,
+                  },
+                ]}
                 value={customDays}
                 onChangeText={setCustomDays}
                 placeholder="30"
@@ -208,26 +310,38 @@ export default function AddSubscriptionScreen() {
           )}
 
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>Category</Text>
+            <Text style={[styles.label, { color: colors.text.primary }]}>
+              Category
+            </Text>
             <View style={styles.categoryButtons}>
               {Categories.map((cat) => (
                 <TouchableOpacity
                   key={cat.id}
                   style={[
                     styles.categoryButton,
-                    { backgroundColor: colors.background.elevated, borderColor: colors.border.default },
-                    category === cat.id && { 
+                    {
+                      backgroundColor: colors.background.elevated,
+                      borderColor: colors.border.default,
+                    },
+                    category === cat.id && {
                       borderColor: colors.accent.primary,
-                      backgroundColor: colors.badge.worthItBg
-                    }
+                      backgroundColor: colors.badge.worthItBg,
+                    },
                   ]}
                   onPress={() => setCategory(cat.id)}
                 >
                   <Text style={styles.categoryIcon}>{cat.icon}</Text>
-                  <Text style={[
-                    styles.categoryLabel,
-                    { color: category === cat.id ? colors.accent.primary : colors.text.primary }
-                  ]}>
+                  <Text
+                    style={[
+                      styles.categoryLabel,
+                      {
+                        color:
+                          category === cat.id
+                            ? colors.accent.primary
+                            : colors.text.primary,
+                      },
+                    ]}
+                  >
                     {cat.name}
                   </Text>
                 </TouchableOpacity>
@@ -236,9 +350,18 @@ export default function AddSubscriptionScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>Notes (Optional)</Text>
+            <Text style={[styles.label, { color: colors.text.primary }]}>
+              Notes (Optional)
+            </Text>
             <TextInput
-              style={[styles.textArea, { backgroundColor: colors.background.elevated, color: colors.text.primary, borderColor: colors.border.default }]}
+              style={[
+                styles.textArea,
+                {
+                  backgroundColor: colors.background.elevated,
+                  color: colors.text.primary,
+                  borderColor: colors.border.default,
+                },
+              ]}
               value={notes}
               onChangeText={setNotes}
               placeholder="Add any notes..."
@@ -257,7 +380,7 @@ export default function AddSubscriptionScreen() {
         />
       </ScrollView>
     </SafeAreaView>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
@@ -265,20 +388,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
   backButton: {
     width: 40,
     height: 40,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   title: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   scrollView: {
     flex: 1,
@@ -292,7 +415,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 12,
   },
   templatesScroll: {
@@ -303,7 +426,7 @@ const styles = StyleSheet.create({
     width: 100,
     padding: 12,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
     marginRight: 12,
   },
   templateIcon: {
@@ -312,8 +435,8 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
   },
   form: {
     borderRadius: 16,
@@ -324,12 +447,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   inputRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 8,
   },
   input: {
@@ -344,23 +467,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     borderWidth: 1,
     minHeight: 80,
-    textAlignVertical: 'top',
+    textAlignVertical: "top",
   },
   pickerContainer: {
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   pickerText: {
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   cycleButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   cycleButton: {
@@ -371,16 +494,16 @@ const styles = StyleSheet.create({
   },
   cycleButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   categoryButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   categoryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -392,9 +515,9 @@ const styles = StyleSheet.create({
   },
   categoryLabel: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   submitButton: {
     marginTop: 8,
   },
-})
+});
