@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "976201476870",
+    "project_id": "substracker-647d9",
+    "storage_bucket": "substracker-647d9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:976201476870:android:677f7fc6aacca5a7738c87",
+        "android_client_info": {
+          "package_name": "com.sabil.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAlEA1vKHLBSHwwKX26d4bFTe7BORu2ncY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
