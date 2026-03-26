@@ -2,18 +2,22 @@
   "expo": {
     "name": "Substracker",
     "slug": "frontend",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "substracker",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sabil.subscriptiontracker",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
-      "package": "com.sabil.frontend",
-      "versionCode": 4,
+      "package": "com.sabil.subscriptiontracker",
+      "versionCode": 7,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -66,11 +70,12 @@
       "reactCompiler": true
     },
     "extra": {
-      "expoProjectId": "97f5f3a0-8256-4e8f-9d0a-0d907322bbd8",
       "router": {},
+      "expoProjectId": "486ef2cc-70c6-4610-b750-d3384adc48fd",
       "eas": {
-        "projectId": "97f5f3a0-8256-4e8f-9d0a-0d907322bbd8"
+        "projectId": "486ef2cc-70c6-4610-b750-d3384adc48fd"
       }
-    }
+    },
+    "owner": "sabil10"
   }
 }

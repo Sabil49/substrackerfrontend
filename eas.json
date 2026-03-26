@@ -14,6 +14,10 @@
       "distribution": "internal"
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://substrackerapi.vercel.app",
+        "EXPO_PUBLIC_PAYMENT_ENABLED": "true"
+      },
       "android": {
         "buildType": "app-bundle"
       },

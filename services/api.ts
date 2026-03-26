@@ -1,36 +1,50 @@
 // app/services/api.ts
 import axios from "axios";
-import { Alert } from "react-native";
+import Constants from "expo-constants";
+import { Alert, Platform } from "react-native";
 import { getAuthToken, getGuestId } from "../utils/storage";
 
-// globally display user-friendly alerts for failed requests
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+const staticDefaultApiUrl = "https://substrackerapi.vercel.app";
+const emulatorFallbackUrl =
+  Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://127.0.0.1:3000";
 
-// Add API URL validation
-if (!process.env.EXPO_PUBLIC_API_URL) {
-  console.warn("⚠️ EXPO_PUBLIC_API_URL not set, using localhost fallback");
+const expoExtra =
+  (Constants.expoConfig as any)?.extra ||
+  (Constants.manifest as any)?.extra ||
+  {};
+const envUrl =
+  process.env.EXPO_PUBLIC_API_URL?.trim() ||
+  (expoExtra?.EXPO_PUBLIC_API_URL as string)?.trim() ||
+  (expoExtra?.API_URL as string)?.trim();
+
+const shouldUseEmulatorUrl = __DEV__ && !Constants.isDevice;
+export const API_URL =
+  envUrl || (shouldUseEmulatorUrl ? emulatorFallbackUrl : staticDefaultApiUrl);
+
+if (!envUrl) {
+  console.warn(
+    `⚠️ EXPO_PUBLIC_API_URL is not set; using ${
+      shouldUseEmulatorUrl ? "emulator/sim URL" : "production default"
+    }`,
+  );
 }
-
 console.log("🌐 API URL configured as:", API_URL);
 
-// Test API connectivity on app start
+// Validate health quickly
 export const testApiConnectivity = async (): Promise<boolean> => {
   try {
-    console.log("🧪 Testing API connectivity...");
-    const response = await fetch(`${API_URL}/api/health`, {
+    const resp = await fetch(`${API_URL}/api/health`, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
     });
-
-    if (response.ok) {
-      console.log("✅ API connectivity test passed");
+    if (resp.ok) {
+      console.log("✅ API health OK");
       return true;
-    } else {
-      console.warn("⚠️ API health check failed:", response.status);
-      return false;
     }
-  } catch (error) {
-    console.error("❌ API connectivity test failed:", error);
+    console.warn("⚠️ API health returned non-2xx:", resp.status);
+    return false;
+  } catch (err) {
+    console.error("❌ API health check failed:", err);
     return false;
   }
 };
@@ -45,16 +59,42 @@ const api = axios.create({
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const isNetworkError = !error.response && error.request;
+    const requestConfig = error.config || {};
+
+    // Retry once on fallback for situations where emulator localhost is unreachable
+    if (
+      isNetworkError &&
+      !requestConfig.__retry &&
+      requestConfig.baseURL !== `${staticDefaultApiUrl}/api`
+    ) {
+      requestConfig.__retry = true;
+      const fallbackBaseURL = `${staticDefaultApiUrl}/api`;
+      console.warn(
+        `⚠️ Network error‚ retrying on production API: ${requestConfig.baseURL} -> ${fallbackBaseURL}`,
+      );
+      try {
+        return await api.request({
+          ...requestConfig,
+          baseURL: fallbackBaseURL,
+        });
+      } catch (retryError) {
+        // continue to alert below
+        error = retryError;
+      }
+    }
+
     if (error.response) {
       const message =
         error.response.data?.message ||
+        error.response.data?.error ||
         `Server returned ${error.response.status}`;
       Alert.alert("Error", message);
-    } else if (error.request) {
+    } else if (isNetworkError) {
       Alert.alert(
         "Network Error",
-        "Unable to reach the server. Please check your connection.",
+        `Unable to reach the server at ${requestConfig.baseURL || API_URL}. Please check your connection or verify API host.`,
       );
     } else {
       Alert.alert("Error", error.message || "An unexpected error occurred.");
@@ -62,6 +102,35 @@ api.interceptors.response.use(
     return Promise.reject(error);
   },
 );
+
+api.interceptors.request.use(
+  async (config) => {
+    const token = await getAuthToken();
+    if (token) {
+      config.headers.set("Authorization", `Bearer ${token}`);
+    }
+
+    // Guest support (fallback)
+    if (!token) {
+      try {
+        const guestId = await getGuestId();
+        const method = config.method?.toLowerCase();
+        if (method === "get" || method === "delete") {
+          config.params = { ...config.params, guestId };
+        } else {
+          config.data = { ...config.data, guestId };
+        }
+      } catch (error) {
+        console.warn("⚠️ Could not get guestId, proceeding without it", error);
+      }
+    }
+
+    return config;
+  },
+  (error) => Promise.reject(error),
+);
+
+export default api;
 
 /* ============================
    TYPES
@@ -166,57 +235,6 @@ export interface UpdateSubscriptionPayload {
   lastReviewedAt?: string;
   usageCount?: number | "increment";
 }
-
-/* ============================
-   REQUEST INTERCEPTOR
-============================ */
-
-api.interceptors.request.use(
-  async (config) => {
-    const token = await getAuthToken();
-
-    // Authenticated user — attach Bearer token and proceed
-    if (token) {
-      config.headers?.set("Authorization", `Bearer ${token}`);
-      return config;
-    }
-
-    // /devices requires full auth — no guest support
-    if (config.url?.startsWith("/devices")) {
-      console.log("⏭ Skipping /devices request (not logged in)");
-      return Promise.reject({
-        response: { status: 401 },
-        message: "Not authenticated",
-      });
-    }
-
-    // For all other routes, attach guestId
-    // getGuestId() ensures a valid server-issued ID exists before proceeding
-    try {
-      const guestId = await getGuestId();
-      const method = config.method?.toLowerCase();
-      if (method === "get" || method === "delete") {
-        // GET and DELETE have no body — send guestId as query param
-        config.params = { ...config.params, guestId };
-      } else {
-        // POST, PATCH, PUT — send guestId in request body
-        config.data = { ...config.data, guestId };
-      }
-    } catch (error) {
-      console.error("❌ Could not get guestId for request:", config.url, error);
-      // Instead of throwing 401, let the request proceed without guestId
-      // The backend should handle this gracefully
-      console.warn(
-        "⚠️ Proceeding without guestId - backend must allow anonymous access",
-      );
-    }
-
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
-
-export default api;
 
 /* ============================
    SUBSCRIPTIONS API

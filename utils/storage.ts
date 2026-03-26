@@ -1,6 +1,7 @@
 // app/utils/storage.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 
 export const STORAGE_KEYS = {
   GUEST_ID: "guestId",
@@ -10,7 +11,26 @@ export const STORAGE_KEYS = {
   NOTIFICATION_PERMISSION_ASKED: "notificationPermissionAsked",
 };
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+import Constants from "expo-constants";
+
+const staticDefaultApiUrl = "https://substrackerapi.vercel.app";
+const emulatorFallbackUrl =
+  Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://127.0.0.1:3000";
+
+const expoExtra =
+  (Constants.expoConfig as any)?.extra ||
+  (Constants.manifest as any)?.extra ||
+  {};
+const envUrl =
+  process.env.EXPO_PUBLIC_API_URL?.trim() ||
+  (expoExtra?.EXPO_PUBLIC_API_URL as string)?.trim() ||
+  (expoExtra?.API_URL as string)?.trim();
+
+const shouldUseEmulatorUrl = __DEV__ && !Constants.isDevice;
+export const API_URL =
+  envUrl || (shouldUseEmulatorUrl ? emulatorFallbackUrl : staticDefaultApiUrl);
+
+envUrl || (__DEV__ ? emulatorFallbackUrl : staticDefaultApiUrl);
 
 // A valid server-issued guestId looks like: guest_<32 hex chars>
 // Old client-generated ones look like: guest_<uuid-v4 with dashes>
@@ -41,7 +61,10 @@ export function getGuestId(): Promise<string> {
           );
         }
 
-        console.log("🌐 Requesting new guest session from:", `${API_URL}/api/guest`);
+        console.log(
+          "🌐 Requesting new guest session from:",
+          `${API_URL}/api/guest`,
+        );
 
         // Request a server-side guest session
         const response = await fetch(`${API_URL}/api/guest`, {
@@ -54,7 +77,9 @@ export function getGuestId(): Promise<string> {
         if (!response.ok) {
           const errorText = await response.text();
           console.error("❌ Guest API error:", response.status, errorText);
-          throw new Error(`Server returned ${response.status} for /api/guest: ${errorText}`);
+          throw new Error(
+            `Server returned ${response.status} for /api/guest: ${errorText}`,
+          );
         }
 
         const data = await response.json();
@@ -75,7 +100,7 @@ export function getGuestId(): Promise<string> {
         console.error("❌ getGuestId failed:", error);
 
         // Check if it's a network error
-        if (error instanceof TypeError && error.message.includes('fetch')) {
+        if (error instanceof TypeError && error.message.includes("fetch")) {
           console.error("🌐 Network error - check internet connection");
         }
 

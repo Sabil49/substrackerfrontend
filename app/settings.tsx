@@ -209,7 +209,7 @@ export default function SettingsScreen() {
 
           <View style={styles.aboutContent}>
             <Text style={[styles.aboutText, { color: colors.text.primary }]}>
-              SubTracker v1.0.0
+              SubTracker v1.0.3
             </Text>
             <Text
               style={[

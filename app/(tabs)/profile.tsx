@@ -3,10 +3,10 @@ import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
 import { User, userApi } from "@/services/api";
 import {
-    checkNotificationPermissions,
-    registerForPushNotifications,
-    removePushTokenFromServer,
-    sendPushTokenToServer,
+  checkNotificationPermissions,
+  registerForPushNotifications,
+  removePushTokenFromServer,
+  sendPushTokenToServer,
 } from "@/services/notifications";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -14,13 +14,13 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -361,7 +361,7 @@ export default function ProfileScreen() {
           style={[styles.section, { backgroundColor: colors.background.card }]}
         >
           <Text style={[styles.versionText, { color: colors.text.muted }]}>
-            SubTracker v1.0.0
+            SubTracker v1.0.3
           </Text>
         </View>
       </ScrollView>
