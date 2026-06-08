@@ -1,7 +1,8 @@
 // app/components/Card.tsx
-import { BorderRadius, Colors, Spacing } from "@/constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import React from "react";
 import { StyleSheet, View, ViewStyle } from "react-native";
+import { useTheme } from "@/contexts/ThemeContext";
 
 interface CardProps {
   children: React.ReactNode;
@@ -16,12 +17,14 @@ export default function Card({
   elevated = false,
   highlighted = false,
 }: CardProps) {
+  const { colors } = useTheme();
   return (
     <View
       style={[
         styles.card,
-        elevated && styles.elevated,
-        highlighted && styles.highlighted,
+        { backgroundColor: colors.background.card },
+        elevated && { backgroundColor: colors.background.elevated },
+        highlighted && { borderColor: colors.accent.primary },
         style,
       ]}
     >
@@ -32,7 +35,6 @@ export default function Card({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.background.card,
     borderRadius: BorderRadius.large,
     padding: Spacing.m,
     borderWidth: 1.5,
@@ -43,10 +45,6 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 8,
   },
-  elevated: {
-    backgroundColor: Colors.background.elevated,
-  },
-  highlighted: {
-    borderColor: Colors.accent.gold,
-  },
+  elevated: {},
+  highlighted: {},
 });

@@ -1,5 +1,5 @@
 // app/components/Button.tsx
-import { BorderRadius, Colors, Typography } from "@/constants/theme";
+import { BorderRadius, Typography } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import {
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   ViewStyle,
 } from "react-native";
+import { useTheme } from "@/contexts/ThemeContext";
 
 interface ButtonProps {
   title: string;
@@ -30,6 +31,8 @@ export default function Button({
   style,
   textStyle,
 }: ButtonProps) {
+  const { colors } = useTheme();
+
   if (variant === "primary") {
     return (
       <TouchableOpacity
@@ -39,13 +42,16 @@ export default function Button({
         activeOpacity={0.8}
       >
         <LinearGradient
-          colors={[Colors.accent.gold, Colors.accent.secondary]}
+          colors={
+            (colors.gradient.accent as readonly string[]) ||
+            [colors.accent.primary, colors.accent.secondary]
+          }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.gradient}
         >
           {loading ? (
-            <ActivityIndicator color={Colors.text.primary} />
+            <ActivityIndicator color={colors.text.primary} />
           ) : (
             <Text style={[styles.primaryText, textStyle]}>{title}</Text>
           )}
@@ -67,7 +73,7 @@ export default function Button({
       activeOpacity={0.8}
     >
       {loading ? (
-        <ActivityIndicator color={Colors.text.secondary} />
+        <ActivityIndicator color={colors.text.secondary} />
       ) : (
         <Text style={[styles.secondaryText, textStyle]}>{title}</Text>
       )}
@@ -89,7 +95,7 @@ const styles = StyleSheet.create({
   primaryText: {
     ...Typography.body,
     fontWeight: "600",
-    color: Colors.text.primary,
+    color: "#fff",
   },
   secondaryButton: {
     justifyContent: "center",
@@ -98,7 +104,7 @@ const styles = StyleSheet.create({
   },
   secondaryText: {
     ...Typography.body,
-    color: Colors.text.secondary,
+    color: "#4B5563",
   },
   disabled: {
     opacity: 0.5,

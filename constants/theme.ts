@@ -1,26 +1,26 @@
 // app/constants/theme.ts
 export const Colors = {
   background: {
-    primary: "#0B0B0E",
-    secondary: "#121214",
-    card: "#1A1A1E",
-    elevated: "#0F0F12",
+    primary: "#F6F8FB",
+    secondary: "#FFFFFF",
+    card: "#FFFFFF",
+    elevated: "#F0F4FF",
   },
   accent: {
-    gold: "#F5B65A",
-    secondary: "#E58B2A",
-    dark: "#C86A12",
+    gold: "#06B6D4",
+    secondary: "#4F46E5",
+    dark: "#0F172A",
   },
   text: {
-    primary: "#FFFFFF",
-    secondary: "#A1A1A6",
-    muted: "#7C7C80",
-    disabled: "#5A5A5F",
+    primary: "#0F172A",
+    secondary: "#4B5563",
+    muted: "#6B7280",
+    disabled: "#9CA3AF",
   },
   status: {
-    success: "#3ED598",
-    warning: "#F5B65A",
-    error: "#FF6B6B",
+    success: "#10B981",
+    warning: "#F59E0B",
+    error: "#EF4444",
   },
 };
 

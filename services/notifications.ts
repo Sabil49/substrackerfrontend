@@ -48,6 +48,7 @@ export async function registerForPushNotifications() {
     // Use expoConfig (SDK 49+) with fallback for older SDKs
     const projectId =
       Constants.expoConfig?.extra?.expoProjectId ??
+      Constants.expoConfig?.extra?.eas?.projectId ??
       Constants.easConfig?.projectId ??
       (Constants.manifest as any)?.extra?.expoProjectId;
 

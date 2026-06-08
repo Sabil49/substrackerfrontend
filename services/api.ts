@@ -106,9 +106,10 @@ api.interceptors.response.use(
 api.interceptors.request.use(
   async (config) => {
     const token = await getAuthToken();
-    if (token) {
-      config.headers.set("Authorization", `Bearer ${token}`);
-    }
+    config.headers = {
+      ...(config.headers as Record<string, string>),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
 
     // Guest support (fallback)
     if (!token) {
@@ -374,20 +375,13 @@ export const deviceApi = {
     deviceToken: string,
     platform: "ios" | "android",
   ): Promise<void> => {
-    const token = await getAuthToken();
-    if (!token) {
-      console.log("⏭ Skipping device registration (not logged in)");
-      return;
-    }
+    // Allow registration for both authenticated and guest users.
+    // The request interceptor will attach `guestId` when no auth token is present.
     await api.post("/devices", { deviceToken, platform });
   },
 
   unregister: async (deviceToken: string): Promise<void> => {
-    const token = await getAuthToken();
-    if (!token) {
-      console.log("⏭ Skipping device unregistration (not logged in)");
-      return;
-    }
+    // Allow unregistration for both authenticated and guest users.
     await api.delete(`/devices?deviceToken=${encodeURIComponent(deviceToken)}`);
   },
 };

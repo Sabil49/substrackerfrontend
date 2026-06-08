@@ -2,6 +2,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 
 export const STORAGE_KEYS = {
   GUEST_ID: "guestId",
@@ -10,8 +11,6 @@ export const STORAGE_KEYS = {
   ONBOARDING_COMPLETED: "onboardingCompleted",
   NOTIFICATION_PERMISSION_ASKED: "notificationPermissionAsked",
 };
-
-import Constants from "expo-constants";
 
 const staticDefaultApiUrl = "https://substrackerapi.vercel.app";
 const emulatorFallbackUrl =
@@ -29,8 +28,6 @@ const envUrl =
 const shouldUseEmulatorUrl = __DEV__ && !Constants.isDevice;
 export const API_URL =
   envUrl || (shouldUseEmulatorUrl ? emulatorFallbackUrl : staticDefaultApiUrl);
-
-envUrl || (__DEV__ ? emulatorFallbackUrl : staticDefaultApiUrl);
 
 // A valid server-issued guestId looks like: guest_<32 hex chars>
 // Old client-generated ones look like: guest_<uuid-v4 with dashes>
