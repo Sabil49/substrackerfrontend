@@ -323,6 +323,10 @@ export const userApi = {
     const response = await api.get("/user");
     return response.data.user;
   },
+
+  deleteAccount: async (): Promise<void> => {
+    await api.delete("/user");
+  },
 };
 
 /* ============================

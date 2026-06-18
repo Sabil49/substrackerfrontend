@@ -2,22 +2,28 @@
 import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
 import { API_URL } from "@/services/api";
-import { getAuthToken } from "@/utils/storage";
+import { getAuthToken, getGuestId } from "@/utils/storage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Platform,
 } from "react-native";
 import * as RNIap from "react-native-iap";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+const SUBSCRIPTION_SKUS = [
+  "com.substracker.premium.monthly",
+  "com.substracker.premium.yearly",
+];
 
 const FEATURES = [
   {
@@ -56,7 +62,7 @@ const PRODUCTS = [
   {
     id: "monthly",
     name: "Monthly",
-    productId: "com.substracker.monthly",
+    productId: "com.substracker.premium.monthly",
     price: "$4.99",
     period: "/month",
     popular: false,
@@ -64,7 +70,7 @@ const PRODUCTS = [
   {
     id: "yearly",
     name: "Yearly",
-    productId: "com.substracker.yearly",
+    productId: "com.substracker.premium.yearly",
     price: "$39.99",
     period: "/year",
     popular: true,
@@ -72,16 +78,17 @@ const PRODUCTS = [
   },
 ];
 
-const PLANS = PRODUCTS;
-
 const PRODUCT_PLAN_MAP = {
-  "com.substracker.monthly": "monthly",
-  "com.substracker.yearly": "yearly",
+  "com.substracker.premium.monthly": "monthly",
+  "com.substracker.premium.yearly": "yearly",
 } as const;
 
-type PlanId = typeof PRODUCTS[number]["id"];
+type PlanId = (typeof PRODUCTS)[number]["id"];
 
-const getPurchasePlanId = (purchase: any, fallback: string) => {
+const getStoreProductId = (item: any) =>
+  item?.id || item?.productId || item?.sku || item?.productIdAndroid;
+
+const getPurchasePlanId = (purchase: any, fallback: PlanId) => {
   const productId = purchase.productId || purchase.sku || purchase.productIdAndroid;
   return (
     (productId && PRODUCT_PLAN_MAP[productId as keyof typeof PRODUCT_PLAN_MAP]) ||
@@ -92,43 +99,49 @@ const getPurchasePlanId = (purchase: any, fallback: string) => {
 const verifyPurchaseWithBackend = async (
   purchase: any,
   planId: string,
-  authToken: string,
+  authToken: string | null,
+  guestId?: string,
 ) => {
   const purchaseToken = purchase.purchaseToken || purchase.transactionId;
   const receipt =
     purchase.transactionReceipt || purchase.purchaseToken || purchase.transactionId;
-  const response = await fetch(`${API_URL}/api/user/verify-premium-purchase`, {
+
+  return fetch(`${API_URL}/api/user/verify-premium-purchase`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${authToken}`,
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
     },
     body: JSON.stringify({
       planId,
       purchaseToken,
       receipt,
       platform: Platform.OS === "ios" ? "ios" : "android",
+      ...(guestId ? { guestId } : {}),
     }),
   });
-  return response;
 };
 
 const finishPurchase = async (purchase: any) => {
-  if (typeof RNIap.finishTransaction === "function") {
-    try {
-      await RNIap.finishTransaction(purchase);
-    } catch (err) {
-      console.warn("Failed to finish transaction", err);
-    }
+  try {
+    await (RNIap as any).finishTransaction({
+      purchase,
+      isConsumable: false,
+    });
+  } catch (err) {
+    console.warn("Failed to finish transaction", err);
   }
 };
 
 export default function PremiumScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("yearly");
   const [loading, setLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
+  const [storeProducts, setStoreProducts] = useState<any[]>([]);
+
   const currentPlanRef = useRef<PlanId>("yearly");
 
   useEffect(() => {
@@ -136,123 +149,77 @@ export default function PremiumScreen() {
   }, [selectedPlan]);
 
   useEffect(() => {
-    console.log("✅ RNIap loaded");
-  }, []);
-
-  // Initialize IAP connection and setup listeners
-  useEffect(() => {
     const initIAP = async () => {
-  try {
-    await RNIap.initConnection();
+      try {
+        await RNIap.initConnection();
 
-// Alert.alert("RNIap object:", JSON.stringify(RNIap, null, 2));
+        const products = await (RNIap as any).fetchProducts({
+          skus: SUBSCRIPTION_SKUS,
+          type: "subs",
+        });
 
-// Alert.alert(
-//   "IAP Methods",
-//   JSON.stringify(
-//     {
-//       initConnection: typeof (RNIap as any).initConnection,
-//       endConnection: typeof (RNIap as any).endConnection,
-//       getProducts: typeof (RNIap as any).getProducts,
-//       fetchProducts: typeof (RNIap as any).fetchProducts,
-// requestPurchase: typeof (RNIap as any).requestPurchase,
-//     },
-//     null,
-//     2
-//   )
-// );
-
-// Alert.alert(
-//   "IAP",
-//   `Connected: ${String(connected)}`
-// );
-
-// Alert.alert(
-//   "RNIap Keys",
-//   JSON.stringify(Object.keys(RNIap || {}), null, 2)
-// );
-
-//     const products = await (RNIap as any).fetchProducts({
-//   skus: [
-//     "com.substracker.monthly",
-//     "com.substracker.yearly",
-//   ],
-//   type: "subs",
-// });
-
-// Alert.alert(
-//   "Products",
-//   JSON.stringify(products, null, 2)
-// );
-
-  } catch (err) {
-    console.error("RNIap init failed", err);
-  }
-};
+        console.log("IAP PRODUCTS:", JSON.stringify(products, null, 2));
+        setStoreProducts(products || []);
+      } catch (err) {
+        console.error("RNIap init/products failed", err);
+      }
+    };
 
     initIAP();
 
-    const purchaseUpdateSub = RNIap.purchaseUpdatedListener(
-      async (purchase) => {
-        console.log("IAP purchase updated", purchase);
-        const planId = getPurchasePlanId(purchase, currentPlanRef.current);
+    const purchaseUpdateSub = RNIap.purchaseUpdatedListener(async (purchase) => {
+      console.log("IAP purchase updated", purchase);
+      const planId = getPurchasePlanId(purchase, currentPlanRef.current);
 
-        try {
-          const authToken = await getAuthToken();
-          if (!authToken) {
-            Alert.alert(
-              "Sign In Required",
-              "Please sign in before completing your purchase.",
-            );
-            return;
-          }
+      try {
+        const authToken = await getAuthToken();
+        const guestId = authToken ? undefined : await getGuestId();
 
-          if (!process.env.EXPO_PUBLIC_PAYMENT_ENABLED) {
-            Alert.alert("Success", "Premium feature enabled (dev mode)", [
-              { text: "OK", onPress: () => router.back() },
-            ]);
-            await finishPurchase(purchase);
-            return;
-          }
-
-          const verifyResponse = await verifyPurchaseWithBackend(
-            purchase,
-            planId,
-            authToken,
-          );
-
-          if (!verifyResponse.ok) {
-            const errorData = await verifyResponse.json().catch(() => ({}));
-            throw new Error(
-              errorData.message ||
-                "Payment verification failed. Please contact support.",
-            );
-          }
-
-          const verifyData = await verifyResponse.json();
-          if (!verifyData.isPro) {
-            throw new Error(
-              "Payment verified but premium was not granted. Please contact support.",
-            );
-          }
-
+        if (!process.env.EXPO_PUBLIC_PAYMENT_ENABLED) {
           await finishPurchase(purchase);
-
-          Alert.alert("Success", "Premium activated successfully!", [
-            { text: "OK", onPress: () => router.replace("/profile") },
+          Alert.alert("Success", "Premium feature enabled (dev mode)", [
+            { text: "OK", onPress: () => router.back() },
           ]);
-        } catch (e) {
-  console.error("PURCHASE LISTENER ERROR:", e);
+          return;
+        }
 
-  Alert.alert(
-    "Purchase Error",
-    e instanceof Error
-      ? `${e.message}\n\n${e.stack}`
-      : JSON.stringify(e, null, 2)
-  );
-}
-      },
-    );
+        const verifyResponse = await verifyPurchaseWithBackend(
+          purchase,
+          planId,
+          authToken,
+          guestId,
+        );
+
+        if (!verifyResponse.ok) {
+          const errorData = await verifyResponse.json().catch(() => ({}));
+          throw new Error(
+            errorData.message ||
+              "Payment verification failed. Please contact support.",
+          );
+        }
+
+        const verifyData = await verifyResponse.json();
+
+        if (!verifyData.isPro) {
+          throw new Error(
+            "Payment verified but premium was not granted. Please contact support.",
+          );
+        }
+
+        await finishPurchase(purchase);
+
+        Alert.alert("Success", "Premium activated successfully!", [
+          { text: "OK", onPress: () => router.replace("/profile") },
+        ]);
+      } catch (e) {
+        console.error("PURCHASE LISTENER ERROR:", e);
+
+        Alert.alert(
+          "Purchase Error",
+          e instanceof Error ? e.message : JSON.stringify(e, null, 2),
+        );
+      }
+    });
 
     const purchaseErrorSub = RNIap.purchaseErrorListener((error) => {
       console.warn("IAP purchase error", error);
@@ -270,114 +237,79 @@ export default function PremiumScreen() {
   }, [router]);
 
   const handleUpgrade = async () => {
-  setLoading(true);
+    setLoading(true);
 
-  try {
-    const authToken = await getAuthToken();
+    try {
+      const plan = PRODUCTS.find((p) => p.id === selectedPlan);
 
-    if (!authToken) {
-      Alert.alert(
-        "Sign In Required",
-        "You need to create an account or sign in to upgrade to Premium.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Sign In",
-            onPress: () => router.push("/login?redirect=/premium"),
+      if (!plan) {
+        throw new Error("Selected Premium plan is not available.");
+      }
+
+      let products = storeProducts;
+
+      if (!products.length) {
+        products = await (RNIap as any).fetchProducts({
+          skus: SUBSCRIPTION_SKUS,
+          type: "subs",
+        });
+
+        setStoreProducts(products || []);
+      }
+
+      console.log("SUBSCRIPTION PRODUCTS:", JSON.stringify(products, null, 2));
+
+      const storeProduct = products.find(
+        (item: any) => getStoreProductId(item) === plan.productId,
+      );
+
+      if (!storeProduct) {
+        throw new Error(
+          `Subscription product not found: ${plan.productId}. Please wait a few minutes and try again.`,
+        );
+      }
+
+      console.log("Starting subscription purchase:", plan.productId);
+
+      await (RNIap as any).requestPurchase({
+        request: {
+          apple: {
+            sku: plan.productId,
           },
-        ]
-      );
-      return;
-    }
-
-    const product = PRODUCTS.find(
-      (p) => p.id === selectedPlan
-    );
-
-    if (!product) {
-      throw new Error("Invalid plan selected");
-    }
-
-    console.log("Loading products...");
-
-    const products = await (RNIap as any).fetchProducts({
-      skus: [
-        "com.substracker.monthly",
-        "com.substracker.yearly",
-      ],
-      type: "subs",
-    });
-
-    console.log(
-      "PRODUCTS:",
-      JSON.stringify(products, null, 2)
-    );
-
-    // Alert.alert(
-    //   "Products",
-    //   JSON.stringify(products, null, 2)
-    // );
-
-    if (!products?.length) {
-      throw new Error(
-        "No products returned from App Store Connect"
-      );
-    }
-
-    console.log(
-      "Starting purchase:",
-      product.productId
-    );
-
-    await (RNIap as any).requestPurchase({
-      request: {
-        ios: {
-          sku: product.productId,
+          google: {
+            skus: [plan.productId],
+            subscriptionOffers:
+              storeProduct.subscriptionOfferDetailsAndroid?.map((offer: any) => ({
+                sku: plan.productId,
+                offerToken: offer.offerToken,
+              })) || [],
+          },
         },
-        android: {
-          skus: [product.productId],
-        },
-      },
-      type: "subs",
-    });
+        type: "subs",
+      });
+    } catch (error) {
+      console.error("handleUpgrade FULL ERROR:", error);
 
-  } catch (error) {
-    console.error(
-      "handleUpgrade FULL ERROR:",
-      error
-    );
-
-    Alert.alert(
-      "Upgrade Error",
-      error instanceof Error
-        ? error.message
-        : JSON.stringify(error, null, 2)
-    );
-  } finally {
-    setLoading(false);
-  }
-};
+      Alert.alert(
+        "Upgrade Error",
+        error instanceof Error
+          ? error.message
+          : JSON.stringify(error, null, 2),
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleRestore = async () => {
     setRestoreLoading(true);
+
     try {
       const authToken = await getAuthToken();
-      if (!authToken) {
-        Alert.alert(
-          "Sign In Required",
-          "Please sign in to restore your purchase.",
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Sign In",
-              onPress: () => router.push("/login?redirect=/premium"),
-            },
-          ],
-        );
-        return;
-      }
+      const guestId = authToken ? undefined : await getGuestId();
 
       const purchases = await RNIap.getAvailablePurchases();
+
       if (!purchases || purchases.length === 0) {
         Alert.alert(
           "Restore Purchases",
@@ -386,12 +318,25 @@ export default function PremiumScreen() {
         return;
       }
 
-      const purchase = purchases[purchases.length - 1];
-      const planId = getPurchasePlanId(purchase, currentPlanRef.current);
+      const validPurchase = purchases.find((purchase: any) =>
+        SUBSCRIPTION_SKUS.includes(purchase.productId || purchase.sku),
+      );
+
+      if (!validPurchase) {
+        Alert.alert(
+          "Restore Purchases",
+          "No active Substracker Premium subscription was found.",
+        );
+        return;
+      }
+
+      const planId = getPurchasePlanId(validPurchase, currentPlanRef.current);
+
       const verifyResponse = await verifyPurchaseWithBackend(
-        purchase,
+        validPurchase,
         planId,
         authToken,
+        guestId,
       );
 
       if (!verifyResponse.ok) {
@@ -403,13 +348,15 @@ export default function PremiumScreen() {
       }
 
       const verifyData = await verifyResponse.json();
+
       if (!verifyData.isPro) {
         throw new Error(
           "Restore completed but premium was not granted. Please contact support.",
         );
       }
 
-      await finishPurchase(purchase);
+      await finishPurchase(validPurchase);
+
       Alert.alert("Success", "Premium restored successfully!", [
         { text: "OK", onPress: () => router.replace("/profile") },
       ]);
@@ -418,11 +365,24 @@ export default function PremiumScreen() {
         error instanceof Error
           ? error.message
           : "There was a problem restoring your purchase. Please try again later.";
+
       Alert.alert("Restore error", message);
       console.error("Error restoring purchase", error);
     } finally {
       setRestoreLoading(false);
     }
+  };
+
+  const getDisplayedPrice = (plan: (typeof PRODUCTS)[number]) => {
+    const storeProduct = storeProducts.find(
+      (item: any) => getStoreProductId(item) === plan.productId,
+    );
+
+    return (
+      storeProduct?.localizedPrice ||
+      storeProduct?.displayPrice ||
+      plan.price
+    );
   };
 
   return (
@@ -437,9 +397,11 @@ export default function PremiumScreen() {
         >
           <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
         </TouchableOpacity>
+
         <Text style={[styles.headerTitle, { color: colors.text.primary }]}>
           Premium
         </Text>
+
         <View style={{ width: 40 }} />
       </View>
 
@@ -466,7 +428,8 @@ export default function PremiumScreen() {
           <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
             Choose Your Plan
           </Text>
-          {PLANS.map((plan) => (
+
+          {PRODUCTS.map((plan) => (
             <TouchableOpacity
               key={plan.id}
               style={[
@@ -492,6 +455,7 @@ export default function PremiumScreen() {
                   <Text style={styles.popularText}>BEST VALUE</Text>
                 </View>
               )}
+
               <View style={styles.planHeader}>
                 <View style={styles.planInfo}>
                   <Text
@@ -499,6 +463,7 @@ export default function PremiumScreen() {
                   >
                     {plan.name}
                   </Text>
+
                   {"savings" in plan && plan.savings && (
                     <Text
                       style={[styles.savings, { color: colors.status.success }]}
@@ -507,12 +472,14 @@ export default function PremiumScreen() {
                     </Text>
                   )}
                 </View>
+
                 <View style={styles.planPricing}>
                   <Text
                     style={[styles.planPrice, { color: colors.text.primary }]}
                   >
-                    {plan.price}
+                    {getDisplayedPrice(plan)}
                   </Text>
+
                   <Text
                     style={[
                       styles.planPeriod,
@@ -523,6 +490,7 @@ export default function PremiumScreen() {
                   </Text>
                 </View>
               </View>
+
               <View
                 style={[
                   styles.radioOuter,
@@ -551,6 +519,7 @@ export default function PremiumScreen() {
           <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
             Everything Included
           </Text>
+
           {FEATURES.map((feature, index) => (
             <View
               key={index}
@@ -560,12 +529,14 @@ export default function PremiumScreen() {
               ]}
             >
               <Text style={styles.featureIcon}>{feature.icon}</Text>
+
               <View style={styles.featureText}>
                 <Text
                   style={[styles.featureTitle, { color: colors.text.primary }]}
                 >
                   {feature.title}
                 </Text>
+
                 <Text
                   style={[
                     styles.featureDescription,
@@ -583,6 +554,7 @@ export default function PremiumScreen() {
           title={loading ? "Processing..." : "Continue"}
           onPress={handleUpgrade}
           disabled={loading}
+          loading={loading}
           style={styles.upgradeButton}
         />
 
@@ -595,10 +567,60 @@ export default function PremiumScreen() {
           style={styles.restoreButton}
         />
 
-        <Text style={[styles.terms, { color: colors.text.muted }]}>
-          By continuing, you agree to our Terms of Service and Privacy Policy.
-          Subscriptions auto-renew unless cancelled.
+        <Text
+          style={[
+            styles.optionalText,
+            { color: colors.text.muted, marginBottom: 16 },
+          ]}
+        >
+          You can purchase Premium without creating an account. Signing in is
+          optional and only needed if you want to sync purchases across devices.
         </Text>
+
+        <View style={{ alignItems: "center" }}>
+          <Text
+            style={[
+              styles.terms,
+              { color: colors.text.muted, marginBottom: 8 },
+            ]}
+          >
+            Subscriptions automatically renew unless cancelled at least 24 hours
+            before the end of the current billing period.
+          </Text>
+
+          <TouchableOpacity
+            onPress={() =>
+              Linking.openURL("https://myzoapp.com/substracker/privacy-policy")
+            }
+          >
+            <Text
+              style={{
+                color: colors.accent.primary,
+                textDecorationLine: "underline",
+              }}
+            >
+              Privacy Policy
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() =>
+              Linking.openURL(
+                "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/",
+              )
+            }
+          >
+            <Text
+              style={{
+                color: colors.accent.primary,
+                textDecorationLine: "underline",
+                marginTop: 6,
+              }}
+            >
+              Terms of Use
+            </Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -697,6 +719,12 @@ const styles = StyleSheet.create({
   },
   featureIcon: { fontSize: 28 },
   featureText: { flex: 1 },
+  optionalText: {
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
+    marginHorizontal: 4,
+  },
   featureTitle: { fontSize: 15, fontWeight: "700", marginBottom: 3 },
   featureDescription: { fontSize: 13, fontWeight: "400", lineHeight: 18 },
   upgradeButton: { marginBottom: 16 },

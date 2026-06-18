@@ -31,6 +31,7 @@ export default function ProfileScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const loadUser = async () => {
     try {
@@ -119,6 +120,33 @@ export default function ProfileScreen() {
         );
       }
     }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert("Are you sure?", "Delete all account data permanently?", [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          setIsDeletingAccount(true);
+          try {
+            await userApi.deleteAccount();
+            await import("@/utils/storage").then((m) => m.clearAuthToken());
+            setUser(null);
+            setIsLoggedIn(false);
+            router.replace("/");
+          } catch (error) {
+            console.error("Failed to delete account:", error);
+          } finally {
+            setIsDeletingAccount(false);
+          }
+        },
+      },
+    ]);
   };
 
   return (
@@ -335,20 +363,33 @@ export default function ProfileScreen() {
           style={[styles.section, { backgroundColor: colors.background.card }]}
         >
           {isLoggedIn ? (
-            <Button
-              title="Sign Out"
-              onPress={async () => {
-                try {
-                  await import("@/services/api").then((m) =>
-                    m.authApi.logout(),
+            <>
+              <Button
+                title="Sign Out"
+                disabled={isDeletingAccount}
+                onPress={async () => {
+                  try {
+                    await import("@/services/api").then((m) =>
+                      m.authApi.logout(),
+                    );
+                  } catch {}
+                  await import("@/utils/storage").then((m) =>
+                    m.clearAuthToken(),
                   );
-                } catch {}
-                await import("@/utils/storage").then((m) => m.clearAuthToken());
-                setUser(null);
-                setIsLoggedIn(false);
-                router.replace("/");
-              }}
-            />
+                  setUser(null);
+                  setIsLoggedIn(false);
+                  router.replace("/");
+                }}
+              />
+              <Button
+                title="Delete Account"
+                variant="secondary"
+                loading={isDeletingAccount}
+                onPress={handleDeleteAccount}
+                style={styles.deleteAccountButton}
+                textStyle={styles.deleteAccountText}
+              />
+            </>
           ) : (
             <Button
               title="Sign In / Sign Up"
@@ -511,5 +552,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
     textAlign: "center",
+  },
+  deleteAccountButton: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#DC2626",
+  },
+  deleteAccountText: {
+    color: "#DC2626",
+    fontWeight: "700",
   },
 });
