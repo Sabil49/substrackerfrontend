@@ -1,16 +1,19 @@
 // app/premium.tsx
 import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
-import { API_URL, getFriendlyErrorMessage, userApi } from "@/services/api";
-import { getAuthToken, getGuestId } from "@/utils/storage";
+import { getFriendlyErrorMessage, userApi } from "@/services/api";
+import {
+  PREMIUM_PRODUCT_IDS,
+  restorePremiumFromStore,
+  verifyPremiumPurchase,
+} from "@/services/premium";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Linking from "expo-linking";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,10 +23,7 @@ import {
 import * as RNIap from "react-native-iap";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const SUBSCRIPTION_SKUS = [
-  "com.substracker.premium.monthly",
-  "com.substracker.premium.yearly",
-];
+const SUBSCRIPTION_SKUS = [...PREMIUM_PRODUCT_IDS];
 
 const FEATURES = [
   {
@@ -58,49 +58,10 @@ const PRODUCTS = [
   },
 ];
 
-const PRODUCT_PLAN_MAP = {
-  "com.substracker.premium.monthly": "monthly",
-  "com.substracker.premium.yearly": "yearly",
-} as const;
-
 type PlanId = (typeof PRODUCTS)[number]["id"];
 
 const getStoreProductId = (item: any) =>
   item?.id || item?.productId || item?.sku || item?.productIdAndroid;
-
-const getPurchasePlanId = (purchase: any, fallback: PlanId) => {
-  const productId = purchase.productId || purchase.sku || purchase.productIdAndroid;
-  return (
-    (productId && PRODUCT_PLAN_MAP[productId as keyof typeof PRODUCT_PLAN_MAP]) ||
-    fallback
-  );
-};
-
-const verifyPurchaseWithBackend = async (
-  purchase: any,
-  planId: string,
-  authToken: string | null,
-  guestId?: string,
-) => {
-  const purchaseToken = purchase.purchaseToken || purchase.transactionId;
-  const receipt =
-    purchase.transactionReceipt || purchase.purchaseToken || purchase.transactionId;
-
-  return fetch(`${API_URL}/api/user/verify-premium-purchase`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-    },
-    body: JSON.stringify({
-      planId,
-      purchaseToken,
-      receipt,
-      platform: Platform.OS === "ios" ? "ios" : "android",
-      ...(guestId ? { guestId } : {}),
-    }),
-  });
-};
 
 const finishPurchase = async (purchase: any) => {
   try {
@@ -122,12 +83,6 @@ export default function PremiumScreen() {
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [storeProducts, setStoreProducts] = useState<any[]>([]);
   const [isPremium, setIsPremium] = useState(false);
-
-  const currentPlanRef = useRef<PlanId>("yearly");
-
-  useEffect(() => {
-    currentPlanRef.current = selectedPlan;
-  }, [selectedPlan]);
 
   useFocusEffect(
     useCallback(() => {
@@ -163,35 +118,9 @@ export default function PremiumScreen() {
 
     const purchaseUpdateSub = RNIap.purchaseUpdatedListener(async (purchase) => {
       console.log("IAP purchase updated", purchase);
-      const planId = getPurchasePlanId(purchase, currentPlanRef.current);
 
       try {
-        const authToken = await getAuthToken();
-        const guestId = authToken ? undefined : await getGuestId();
-
-        const verifyResponse = await verifyPurchaseWithBackend(
-          purchase,
-          planId,
-          authToken,
-          guestId,
-        );
-
-        if (!verifyResponse.ok) {
-          const errorData = await verifyResponse.json().catch(() => ({}));
-          throw new Error(
-            errorData.message ||
-              errorData.error ||
-              "Payment verification failed. Please contact support.",
-          );
-        }
-
-        const verifyData = await verifyResponse.json();
-
-        if (!verifyData.isPro) {
-          throw new Error(
-            "Payment verified but premium was not granted. Please contact support.",
-          );
-        }
+        await verifyPremiumPurchase(purchase);
 
         await finishPurchase(purchase);
         setIsPremium(true);
@@ -288,58 +217,7 @@ export default function PremiumScreen() {
     setRestoreLoading(true);
 
     try {
-      const authToken = await getAuthToken();
-      const guestId = authToken ? undefined : await getGuestId();
-
-      const purchases = await RNIap.getAvailablePurchases();
-
-      if (!purchases || purchases.length === 0) {
-        Alert.alert(
-          "Restore Purchases",
-          "No previous purchases were found on this account.",
-        );
-        return;
-      }
-
-      const validPurchase = purchases.find((purchase: any) =>
-        SUBSCRIPTION_SKUS.includes(purchase.productId || purchase.sku),
-      );
-
-      if (!validPurchase) {
-        Alert.alert(
-          "Restore Purchases",
-          "No active Substracker Premium subscription was found.",
-        );
-        return;
-      }
-
-      const planId = getPurchasePlanId(validPurchase, currentPlanRef.current);
-
-      const verifyResponse = await verifyPurchaseWithBackend(
-        validPurchase,
-        planId,
-        authToken,
-        guestId,
-      );
-
-      if (!verifyResponse.ok) {
-        const errorData = await verifyResponse.json().catch(() => ({}));
-        throw new Error(
-          errorData.message ||
-            errorData.error ||
-            "Restore failed. Please contact support if this continues.",
-        );
-      }
-
-      const verifyData = await verifyResponse.json();
-
-      if (!verifyData.isPro) {
-        throw new Error(
-          "Restore completed but premium was not granted. Please contact support.",
-        );
-      }
-
-      await finishPurchase(validPurchase);
+      await restorePremiumFromStore();
       setIsPremium(true);
 
       Alert.alert("Success", "Premium restored successfully!", [

@@ -2,6 +2,7 @@
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { testApiConnectivity } from "@/services/api";
 import { registerForPushNotifications } from "@/services/notifications";
+import { syncPremiumEntitlement } from "@/services/premium";
 import { getGuestId } from "@/utils/storage";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -25,6 +26,8 @@ function RootLayoutContent() {
 
         // Must get/create guest session BEFORE any API calls are made
         await getGuestId();
+        // Reconcile Premium with Apple/Google before rendering gated features.
+        await syncPremiumEntitlement();
       } catch (error) {
         console.error("Failed to initialize guest session:", error);
         // Continue anyway — subscriptions screen will show error state
