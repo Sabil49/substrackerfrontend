@@ -1,13 +1,13 @@
 // app/premium.tsx
 import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
-import { API_URL } from "@/services/api";
+import { API_URL, getFriendlyErrorMessage, userApi } from "@/services/api";
 import { getAuthToken, getGuestId } from "@/utils/storage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Linking from "expo-linking";
-import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Platform,
@@ -32,29 +32,9 @@ const FEATURES = [
     description: "Track as many subscriptions as you need",
   },
   {
-    icon: "🔔",
-    title: "Smart Reminders",
-    description: "Advanced notification system",
-  },
-  {
     icon: "📊",
     title: "Advanced Analytics",
     description: "Detailed spending insights and trends",
-  },
-  {
-    icon: "☁️",
-    title: "Cloud Backup",
-    description: "Never lose your subscription data",
-  },
-  {
-    icon: "🎨",
-    title: "Custom Categories",
-    description: "Organize subscriptions your way",
-  },
-  {
-    icon: "📱",
-    title: "Multi-Device Sync",
-    description: "Access your data anywhere",
   },
 ];
 
@@ -141,12 +121,26 @@ export default function PremiumScreen() {
   const [loading, setLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [storeProducts, setStoreProducts] = useState<any[]>([]);
+  const [isPremium, setIsPremium] = useState(false);
 
   const currentPlanRef = useRef<PlanId>("yearly");
 
   useEffect(() => {
     currentPlanRef.current = selectedPlan;
   }, [selectedPlan]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      userApi
+        .get()
+        .then((user) => active && setIsPremium(user.isPro))
+        .catch(() => {});
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
 
   useEffect(() => {
     const initIAP = async () => {
@@ -175,14 +169,6 @@ export default function PremiumScreen() {
         const authToken = await getAuthToken();
         const guestId = authToken ? undefined : await getGuestId();
 
-        if (!process.env.EXPO_PUBLIC_PAYMENT_ENABLED) {
-          await finishPurchase(purchase);
-          Alert.alert("Success", "Premium feature enabled (dev mode)", [
-            { text: "OK", onPress: () => router.back() },
-          ]);
-          return;
-        }
-
         const verifyResponse = await verifyPurchaseWithBackend(
           purchase,
           planId,
@@ -194,6 +180,7 @@ export default function PremiumScreen() {
           const errorData = await verifyResponse.json().catch(() => ({}));
           throw new Error(
             errorData.message ||
+              errorData.error ||
               "Payment verification failed. Please contact support.",
           );
         }
@@ -207,6 +194,7 @@ export default function PremiumScreen() {
         }
 
         await finishPurchase(purchase);
+        setIsPremium(true);
 
         Alert.alert("Success", "Premium activated successfully!", [
           { text: "OK", onPress: () => router.replace("/profile") },
@@ -290,12 +278,7 @@ export default function PremiumScreen() {
     } catch (error) {
       console.error("handleUpgrade FULL ERROR:", error);
 
-      Alert.alert(
-        "Upgrade Error",
-        error instanceof Error
-          ? error.message
-          : JSON.stringify(error, null, 2),
-      );
+      Alert.alert("Upgrade Error", getFriendlyErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -343,6 +326,7 @@ export default function PremiumScreen() {
         const errorData = await verifyResponse.json().catch(() => ({}));
         throw new Error(
           errorData.message ||
+            errorData.error ||
             "Restore failed. Please contact support if this continues.",
         );
       }
@@ -356,17 +340,19 @@ export default function PremiumScreen() {
       }
 
       await finishPurchase(validPurchase);
+      setIsPremium(true);
 
       Alert.alert("Success", "Premium restored successfully!", [
         { text: "OK", onPress: () => router.replace("/profile") },
       ]);
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "There was a problem restoring your purchase. Please try again later.";
-
-      Alert.alert("Restore error", message);
+      Alert.alert(
+        "Restore Error",
+        getFriendlyErrorMessage(
+          error,
+          "There was a problem restoring your purchase. Please try again later.",
+        ),
+      );
       console.error("Error restoring purchase", error);
     } finally {
       setRestoreLoading(false);
@@ -418,13 +404,17 @@ export default function PremiumScreen() {
           end={{ x: 1, y: 1 }}
         >
           <Text style={styles.heroIcon}>⭐</Text>
-          <Text style={styles.heroTitle}>Upgrade to Premium</Text>
+          <Text style={styles.heroTitle}>
+            {isPremium ? "Premium is Active" : "Upgrade to Premium"}
+          </Text>
           <Text style={styles.heroSubtitle}>
-            Unlock all features and take full control
+            {isPremium
+              ? "Unlimited subscriptions and advanced analytics are unlocked"
+              : "Unlock unlimited subscriptions and advanced analytics"}
           </Text>
         </LinearGradient>
 
-        <View style={styles.plansSection}>
+        {!isPremium && <View style={styles.plansSection}>
           <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
             Choose Your Plan
           </Text>
@@ -513,7 +503,7 @@ export default function PremiumScreen() {
               </View>
             </TouchableOpacity>
           ))}
-        </View>
+        </View>}
 
         <View style={styles.featuresSection}>
           <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
@@ -550,19 +540,21 @@ export default function PremiumScreen() {
           ))}
         </View>
 
-        <Button
-          title={loading ? "Processing..." : "Continue"}
-          onPress={handleUpgrade}
-          disabled={loading}
-          loading={loading}
-          style={styles.upgradeButton}
-        />
+        {!isPremium && (
+          <Button
+            title={loading ? "Processing..." : "Continue"}
+            onPress={handleUpgrade}
+            disabled={loading || restoreLoading}
+            loading={loading}
+            style={styles.upgradeButton}
+          />
+        )}
 
         <Button
           title={restoreLoading ? "Restoring..." : "Restore Purchases"}
           variant="secondary"
           onPress={handleRestore}
-          disabled={restoreLoading}
+          disabled={restoreLoading || loading}
           loading={restoreLoading}
           style={styles.restoreButton}
         />

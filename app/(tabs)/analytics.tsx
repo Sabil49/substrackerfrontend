@@ -1,13 +1,13 @@
 // app/(tabs)/analytics.tsx
+import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Analytics, analyticsApi } from "@/services/api";
 import { formatCurrency, formatShortDate } from "@/utils/date";
 import { LinearGradient } from "expo-linear-gradient";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -18,9 +18,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function AnalyticsScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [premiumRequired, setPremiumRequired] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadAnalytics = async () => {
     try {
@@ -28,6 +31,8 @@ export default function AnalyticsScreen() {
       const data = await analyticsApi.get();
       console.log("✅ Analytics loaded successfully");
       setAnalytics(data);
+      setPremiumRequired(false);
+      setLoadError(null);
     } catch (error: any) {
       console.error("❌ Failed to load analytics:", error);
       const errorMessage = error.response?.data?.message ||
@@ -40,7 +45,18 @@ export default function AnalyticsScreen() {
         data: error.response?.data,
         message: error.message
       });
-      Alert.alert("Error", `Failed to load analytics: ${errorMessage}`);
+      setAnalytics(null);
+      if (error.response?.status === 403) {
+        setPremiumRequired(true);
+        setLoadError(null);
+      } else {
+        setPremiumRequired(false);
+        setLoadError(
+          errorMessage === "Unknown error occurred"
+            ? "We could not load analytics. Pull down to try again."
+            : errorMessage,
+        );
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -106,9 +122,21 @@ export default function AnalyticsScreen() {
         >
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>📊</Text>
-            <Text style={[styles.emptyText, { color: colors.text.secondary }]}>
-              Add subscriptions to see your spending insights
+            <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>
+              {premiumRequired ? "Advanced Analytics" : "Analytics Unavailable"}
             </Text>
+            <Text style={[styles.emptyText, { color: colors.text.secondary }]}>
+              {premiumRequired
+                ? "Upgrade to Premium to unlock spending breakdowns, upcoming charges, and yearly insights."
+                : loadError || "Add subscriptions to see your spending insights."}
+            </Text>
+            {premiumRequired && (
+              <Button
+                title="View Premium"
+                onPress={() => router.push("/premium")}
+                style={styles.upgradeButton}
+              />
+            )}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -336,6 +364,15 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 15,
     textAlign: "center",
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  upgradeButton: {
+    alignSelf: "stretch",
+    marginTop: 20,
   },
   heroCard: {
     borderRadius: 24,

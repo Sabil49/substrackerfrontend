@@ -1,9 +1,8 @@
 // app/signup.tsx
 import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
-import { authApi } from "@/services/api";
-import { setAuthToken, STORAGE_KEYS } from "@/utils/storage";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { authApi, getFriendlyErrorMessage } from "@/services/api";
+import { clearGuestSession, setAuthToken } from "@/utils/storage";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -37,8 +36,12 @@ export default function SignupScreen() {
   }, [router]);
 
   const handleSubmit = async () => {
-    if (!email || !password) {
+    if (!email.trim() || !password) {
       Alert.alert("Validation", "Please enter both email and password.");
+      return;
+    }
+    if (password.length < 8) {
+      Alert.alert("Validation", "Password must be at least 8 characters.");
       return;
     }
 
@@ -46,25 +49,16 @@ export default function SignupScreen() {
     try {
       const data = await authApi.signup(email.trim(), password);
       await setAuthToken(data.token);
-      AsyncStorage.removeItem(STORAGE_KEYS.GUEST_ID).catch(() => {});
+      await clearGuestSession();
       router.replace("/profile");
     } catch (err: any) {
       console.error("[Signup] error", err);
-      let serverMsg: string | undefined;
-      const resData = err?.response?.data;
-      if (typeof resData === "string") {
-        serverMsg = resData;
-      } else {
-        serverMsg = resData?.message || resData?.error || err?.message;
-      }
-      // provide friendly text for 500 server errors
-      if (err?.response?.status === 500 && !serverMsg) {
-        serverMsg =
-          "Something went wrong on our end. Please try again later or contact support.";
-      }
       Alert.alert(
         "Signup Failed",
-        serverMsg || "Unable to create account. Please try again.",
+        getFriendlyErrorMessage(
+          err,
+          "Unable to create account. Please try again.",
+        ),
       );
     } finally {
       setLoading(false);
@@ -89,6 +83,7 @@ export default function SignupScreen() {
           placeholderTextColor={colors.text.muted}
           autoCapitalize="none"
           keyboardType="email-address"
+          autoComplete="email"
           value={email}
           onChangeText={setEmail}
         />
@@ -97,6 +92,7 @@ export default function SignupScreen() {
           placeholder="Password"
           placeholderTextColor={colors.text.muted}
           secureTextEntry
+          autoComplete="new-password"
           value={password}
           onChangeText={setPassword}
         />

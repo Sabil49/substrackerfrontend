@@ -141,6 +141,11 @@ export async function clearAuthToken() {
   }
 }
 
+export async function clearGuestSession() {
+  guestIdPromise = null;
+  await AsyncStorage.removeItem(STORAGE_KEYS.GUEST_ID);
+}
+
 export async function setOnboardingCompleted() {
   await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING_COMPLETED, "true");
 }

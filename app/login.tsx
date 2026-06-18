@@ -1,9 +1,8 @@
 // app/login.tsx
 import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
-import { authApi } from "@/services/api";
-import { setAuthToken, STORAGE_KEYS } from "@/utils/storage";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { authApi, getFriendlyErrorMessage } from "@/services/api";
+import { clearGuestSession, setAuthToken } from "@/utils/storage";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -36,7 +35,7 @@ export default function LoginScreen() {
   }, [router]);
 
   const handleSubmit = async () => {
-    if (!email || !password) {
+    if (!email.trim() || !password) {
       Alert.alert("Validation", "Please enter both email and password.");
       return;
     }
@@ -46,27 +45,17 @@ export default function LoginScreen() {
       const data = await authApi.login(email.trim(), password);
       await setAuthToken(data.token);
       // erase guestId so backend no longer associates requests with anonymous session
-      AsyncStorage.removeItem(STORAGE_KEYS.GUEST_ID).catch(() => {});
+      await clearGuestSession();
       // redirect to profile
       router.replace("/profile");
     } catch (err: any) {
       console.error("[Login] error", err);
-      // prefer server-provided message when available
-      let serverMsg: string | undefined;
-      const resData = err?.response?.data;
-      if (typeof resData === "string") {
-        serverMsg = resData;
-      } else {
-        serverMsg = resData?.message || resData?.error || err?.message;
-      }
-      if (err?.response?.status === 500 && !serverMsg) {
-        serverMsg =
-          "Something went wrong on our end. Please try again later or contact support.";
-      }
       Alert.alert(
         "Login Failed",
-        serverMsg ||
+        getFriendlyErrorMessage(
+          err,
           "Unable to sign in. Please verify your email and password.",
+        ),
       );
     } finally {
       setLoading(false);
@@ -91,6 +80,7 @@ export default function LoginScreen() {
           placeholderTextColor={colors.text.muted}
           autoCapitalize="none"
           keyboardType="email-address"
+          autoComplete="email"
           value={email}
           onChangeText={setEmail}
         />
@@ -99,6 +89,7 @@ export default function LoginScreen() {
           placeholder="Password"
           placeholderTextColor={colors.text.muted}
           secureTextEntry
+          autoComplete="current-password"
           value={password}
           onChangeText={setPassword}
         />

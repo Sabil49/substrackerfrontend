@@ -7,16 +7,20 @@
     "icon": "./assets/images/icon.png",
     "scheme": "substracker",
     "userInterfaceStyle": "automatic",
-    "ios": { "supportsTablet": false, "bundleIdentifier": "com.sabil.subscriptiontracker", "infoPlist": { "ITSAppUsesNonExemptEncryption": false } },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.sabil.subscriptiontracker",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
     "android": {
       "package": "com.sabil.subscriptiontracker",
       "versionCode": 7,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -54,7 +58,9 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -62,11 +68,10 @@
     },
     "extra": {
       "router": {},
-      "expoProjectId": "f51bbbb6-2cd9-45c1-84b1-4e927df82404",
       "eas": {
-        "projectId": "f51bbbb6-2cd9-45c1-84b1-4e927df82404"
+        "projectId": "3a14e9db-1796-4036-93a6-6c02d9898997"
       }
     },
-    "owner": "myzoapp"
+    "owner": "myzoapp8780"
   }
 }

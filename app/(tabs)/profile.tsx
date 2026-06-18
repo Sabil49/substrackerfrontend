@@ -1,7 +1,7 @@
 // app/(tabs)/profile.tsx
 import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
-import { User, userApi } from "@/services/api";
+import { getFriendlyErrorMessage, User, userApi } from "@/services/api";
 import {
   checkNotificationPermissions,
   registerForPushNotifications,
@@ -30,7 +30,6 @@ export default function ProfileScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const loadUser = async () => {
@@ -38,24 +37,15 @@ export default function ProfileScreen() {
       const token = await import("@/utils/storage").then((m) =>
         m.getAuthToken(),
       );
-      if (token) {
-        // logged in user
-        const data = await userApi.get();
-        setUser(data);
-        setIsLoggedIn(true);
-      } else {
-        // no auth token means guest
-        setUser(null);
-        setIsLoggedIn(false);
-      }
+      const data = await userApi.get();
+      setUser(data);
+      setIsLoggedIn(Boolean(token));
       const hasPermission = await checkNotificationPermissions();
       setNotificationsEnabled(hasPermission);
-    } catch (error) {
+    } catch {
       console.log("Could not load user profile (guest mode)");
       setUser(null);
       setIsLoggedIn(false);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -123,7 +113,10 @@ export default function ProfileScreen() {
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert("Are you sure?", "Delete all account data permanently?", [
+    Alert.alert(
+      "Delete Account?",
+      "This permanently deletes your account and subscription data. Store subscriptions must still be cancelled through Apple or Google.",
+      [
       {
         text: "Cancel",
         style: "cancel",
@@ -135,18 +128,35 @@ export default function ProfileScreen() {
           setIsDeletingAccount(true);
           try {
             await userApi.deleteAccount();
-            await import("@/utils/storage").then((m) => m.clearAuthToken());
+            await import("@/utils/storage").then(async (m) => {
+              await m.clearAuthToken();
+              await m.clearGuestSession();
+              await m.getGuestId();
+            });
+            const deviceToken = await AsyncStorage.getItem("deviceToken");
+            if (deviceToken) {
+              await sendPushTokenToServer(deviceToken).catch(() => {});
+            }
             setUser(null);
             setIsLoggedIn(false);
+            Alert.alert("Account Deleted", "Your SubTracker account was deleted.");
             router.replace("/");
           } catch (error) {
             console.error("Failed to delete account:", error);
+            Alert.alert(
+              "Could Not Delete Account",
+              getFriendlyErrorMessage(
+                error,
+                "We could not delete your account. Please try again.",
+              ),
+            );
           } finally {
             setIsDeletingAccount(false);
           }
         },
       },
-    ]);
+      ],
+    );
   };
 
   return (
@@ -368,14 +378,24 @@ export default function ProfileScreen() {
                 title="Sign Out"
                 disabled={isDeletingAccount}
                 onPress={async () => {
+                  const deviceToken =
+                    await AsyncStorage.getItem("deviceToken");
+                  if (deviceToken) {
+                    await removePushTokenFromServer(deviceToken).catch(() => {});
+                  }
                   try {
                     await import("@/services/api").then((m) =>
                       m.authApi.logout(),
                     );
                   } catch {}
-                  await import("@/utils/storage").then((m) =>
-                    m.clearAuthToken(),
-                  );
+                  await import("@/utils/storage").then(async (m) => {
+                    await m.clearAuthToken();
+                    await m.clearGuestSession();
+                    await m.getGuestId();
+                  });
+                  if (deviceToken) {
+                    await sendPushTokenToServer(deviceToken).catch(() => {});
+                  }
                   setUser(null);
                   setIsLoggedIn(false);
                   router.replace("/");

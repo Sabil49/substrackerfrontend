@@ -2,7 +2,12 @@
 import Button from "@/components/Button";
 import { BillingCycles, Categories } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
-import { subscriptionsApi, Template, templatesApi } from "@/services/api";
+import {
+  getFriendlyErrorMessage,
+  subscriptionsApi,
+  Template,
+  templatesApi,
+} from "@/services/api";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -90,11 +95,20 @@ export default function AddSubscriptionScreen() {
       Alert.alert("Success", "Subscription added successfully");
       router.back();
     } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.error ||
-        error.message ||
-        "Failed to add subscription";
-      Alert.alert("Error", errorMessage);
+      const errorMessage = getFriendlyErrorMessage(
+        error,
+        "We could not add this subscription. Please try again.",
+      );
+      Alert.alert(
+        error.response?.status === 403 ? "Premium Required" : "Could Not Add",
+        errorMessage,
+        error.response?.status === 403
+          ? [
+              { text: "Not Now", style: "cancel" },
+              { text: "View Premium", onPress: () => router.push("/premium") },
+            ]
+          : undefined,
+      );
     } finally {
       setLoading(false);
     }

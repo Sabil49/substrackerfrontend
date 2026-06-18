@@ -1,7 +1,7 @@
 // app/services/api.ts
-import axios from "axios";
+import axios, { AxiosHeaders } from "axios";
 import Constants from "expo-constants";
-import { Alert, Platform } from "react-native";
+import { Platform } from "react-native";
 import { getAuthToken, getGuestId } from "../utils/storage";
 
 const staticDefaultApiUrl = "https://substrackerapi.vercel.app";
@@ -85,19 +85,9 @@ api.interceptors.response.use(
       }
     }
 
-    if (error.response) {
-      const message =
-        error.response.data?.message ||
-        error.response.data?.error ||
-        `Server returned ${error.response.status}`;
-      Alert.alert("Error", message);
-    } else if (isNetworkError) {
-      Alert.alert(
-        "Network Error",
-        `Unable to reach the server at ${requestConfig.baseURL || API_URL}. Please check your connection or verify API host.`,
-      );
-    } else {
-      Alert.alert("Error", error.message || "An unexpected error occurred.");
+    if (isNetworkError) {
+      error.message =
+        "We could not connect to SubTracker. Check your internet connection and try again.";
     }
     return Promise.reject(error);
   },
@@ -106,10 +96,12 @@ api.interceptors.response.use(
 api.interceptors.request.use(
   async (config) => {
     const token = await getAuthToken();
-    config.headers = {
-      ...(config.headers as Record<string, string>),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
+    config.headers = AxiosHeaders.from(config.headers);
+    if (token) {
+      config.headers.set("Authorization", `Bearer ${token}`);
+    } else {
+      config.headers.delete("Authorization");
+    }
 
     // Guest support (fallback)
     if (!token) {
@@ -132,6 +124,23 @@ api.interceptors.request.use(
 );
 
 export default api;
+
+export function getFriendlyErrorMessage(
+  error: any,
+  fallback = "Something went wrong. Please try again.",
+) {
+  if (!error?.response && error?.request) {
+    return "We could not connect to SubTracker. Check your internet connection and try again.";
+  }
+
+  const message =
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message;
+
+  if (typeof message === "string" && message.trim()) return message;
+  return fallback;
+}
 
 /* ============================
    TYPES
@@ -338,7 +347,8 @@ export const authApi = {
     email: string,
     password: string,
   ): Promise<{ token: string; user: User }> => {
-    const response = await api.post("/auth/signup", { email, password });
+    const guestId = await getGuestId().catch(() => undefined);
+    const response = await api.post("/auth/signup", { email, password, guestId });
     return response.data;
   },
 
@@ -346,7 +356,8 @@ export const authApi = {
     email: string,
     password: string,
   ): Promise<{ token: string; user: User }> => {
-    const response = await api.post("/auth/login", { email, password });
+    const guestId = await getGuestId().catch(() => undefined);
+    const response = await api.post("/auth/login", { email, password, guestId });
     return response.data;
   },
 

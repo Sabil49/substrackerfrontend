@@ -43,7 +43,7 @@ export default function Button({
       >
         <LinearGradient
           colors={
-            (colors.gradient.accent as readonly string[]) ||
+            (colors.gradient.accent as readonly [string, string, ...string[]]) ||
             [colors.accent.primary, colors.accent.secondary]
           }
           start={{ x: 0, y: 0 }}
