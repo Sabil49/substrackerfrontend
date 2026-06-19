@@ -42,7 +42,7 @@ const PRODUCTS = [
   {
     id: "monthly",
     name: "Monthly",
-    productId: "com.substracker.premium.monthly",
+    productId: PREMIUM_PRODUCT_IDS[0],
     price: "$4.99",
     period: "/month",
     popular: false,
@@ -50,7 +50,7 @@ const PRODUCTS = [
   {
     id: "yearly",
     name: "Yearly",
-    productId: "com.substracker.premium.yearly",
+    productId: PREMIUM_PRODUCT_IDS[1],
     price: "$39.99",
     period: "/year",
     popular: true,

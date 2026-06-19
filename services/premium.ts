@@ -3,7 +3,9 @@ import * as RNIap from "react-native-iap";
 import { API_URL } from "./api";
 import { getAuthToken, getGuestId } from "@/utils/storage";
 
-export const PREMIUM_PRODUCT_IDS = [
+export const PREMIUM_PRODUCT_IDS = Platform.OS === 'android'
+  ? ['com.substracker.monthly', 'com.substracker.yearly'] as const
+  : [
   "com.substracker.premium.monthly",
   "com.substracker.premium.yearly",
 ] as const;
@@ -85,8 +87,8 @@ export async function getActivePremiumSubscriptions() {
     .filter(
       (subscription: any) =>
         subscription.isActive &&
-        PREMIUM_PRODUCT_IDS.includes(
-          getPremiumProductId(subscription) as (typeof PREMIUM_PRODUCT_IDS)[number],
+        PREMIUM_PRODUCT_IDS.some(
+          (productId) => productId === getPremiumProductId(subscription),
         ),
     )
     .sort((a: any, b: any) => {
