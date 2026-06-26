@@ -2,7 +2,7 @@
 import axios, { AxiosHeaders } from "axios";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
-import { getAuthToken, getGuestId } from "../utils/storage";
+import { clearAuthToken, getAuthToken, getGuestId } from "../utils/storage";
 
 const staticDefaultApiUrl = "https://substrackerapi.vercel.app";
 const emulatorFallbackUrl =
@@ -57,11 +57,45 @@ const api = axios.create({
   },
 });
 
+async function attachGuestSession(config: any) {
+  const guestId = await getGuestId();
+  const method = config.method?.toLowerCase();
+  config.headers = AxiosHeaders.from(config.headers);
+  config.headers.delete("Authorization");
+
+  if (method === "get" || method === "delete") {
+    config.params = { ...config.params, guestId };
+    return config;
+  }
+
+  let data = config.data;
+  if (typeof data === "string" && data.trim()) {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      data = {};
+    }
+  }
+
+  config.data = { ...(data || {}), guestId };
+  return config;
+}
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const isNetworkError = !error.response && error.request;
     const requestConfig = error.config || {};
+
+    if (
+      error.response?.status === 401 &&
+      !requestConfig.__retryAsGuest &&
+      requestConfig.headers?.Authorization
+    ) {
+      requestConfig.__retryAsGuest = true;
+      await clearAuthToken();
+      await attachGuestSession(requestConfig);
+      return api.request(requestConfig);
+    }
 
     // Retry once on fallback for situations where emulator localhost is unreachable
     if (
@@ -100,19 +134,8 @@ api.interceptors.request.use(
     if (token) {
       config.headers.set("Authorization", `Bearer ${token}`);
     } else {
-      config.headers.delete("Authorization");
-    }
-
-    // Guest support (fallback)
-    if (!token) {
       try {
-        const guestId = await getGuestId();
-        const method = config.method?.toLowerCase();
-        if (method === "get" || method === "delete") {
-          config.params = { ...config.params, guestId };
-        } else {
-          config.data = { ...config.data, guestId };
-        }
+        await attachGuestSession(config);
       } catch (error) {
         console.warn("⚠️ Could not get guestId, proceeding without it", error);
       }

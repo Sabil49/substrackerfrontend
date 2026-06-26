@@ -2,6 +2,7 @@
 import { useTheme } from "@/contexts/ThemeContext";
 import {
   cancelAllScheduledNotifications,
+  checkNotificationPermissions,
   getScheduledNotifications,
 } from "@/services/notifications";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,10 +26,14 @@ export default function SettingsScreen() {
 
   const handleTestNotification = async () => {
     try {
-      const scheduled = await getScheduledNotifications();
+      const [scheduled, permissionsEnabled] = await Promise.all([
+        getScheduledNotifications(),
+        checkNotificationPermissions(),
+      ]);
+
       Alert.alert(
         "Notification Status",
-        `You have ${scheduled.length} scheduled notification(s).\n\nNotifications are ${scheduled.length > 0 ? "active ✅" : "not set up yet ⚠️"}`,
+        `Device notifications are ${permissionsEnabled ? "enabled" : "disabled"}.\n\nLocal scheduled reminders on this device: ${scheduled.length}.\n\nSubscription reminders are managed by SubTracker when notifications are enabled.`,
       );
     } catch {
       Alert.alert("Error", "Failed to check notifications");
@@ -37,8 +42,8 @@ export default function SettingsScreen() {
 
   const handleClearNotifications = () => {
     Alert.alert(
-      "Clear Notifications",
-      "This will cancel all scheduled notifications. They will be recreated when you next open the app.",
+      "Clear Local Notifications",
+      "This will cancel local scheduled notifications on this device. Server push reminders are not affected.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -166,7 +171,7 @@ export default function SettingsScreen() {
               <Text
                 style={[styles.settingLabel, { color: colors.text.primary }]}
               >
-                Clear All Notifications
+                Clear Local Notifications
               </Text>
               <Text
                 style={[
@@ -174,7 +179,7 @@ export default function SettingsScreen() {
                   { color: colors.text.secondary },
                 ]}
               >
-                Cancel all scheduled reminders
+                Cancel local scheduled reminders
               </Text>
             </View>
             <Ionicons
