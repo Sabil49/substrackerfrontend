@@ -215,53 +215,111 @@ export default function SubscriptionDetailScreen() {
           onPress={() => router.back()}
           style={styles.backButton}
         >
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+          <Ionicons name="chevron-back" size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text.primary }]}>
-          Details
-        </Text>
-        <TouchableOpacity onPress={handleDelete} style={styles.deleteButton}>
-          <Ionicons
-            name="trash-outline"
-            size={22}
-            color={colors.status.error}
-          />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {!subscription.isCanceled && (
+            <TouchableOpacity
+              onPress={() => router.push(`/add-subscription?id=${id}`)}
+              style={styles.headerIconButton}
+            >
+              <Ionicons name="pencil-outline" size={20} color={colors.text.primary} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={handleDelete} style={styles.headerIconButton}>
+            <Ionicons name="trash-outline" size={20} color={colors.status.error} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         <ScrollView contentContainerStyle={styles.content}>
-          <LinearGradient
-            colors={
-              (subscription.isCanceled
-                ? colors.gradient.canceled
-                : colors.gradient.primary) as readonly [
-                string,
-                string,
-                ...string[],
-              ]
-            }
-            style={styles.heroCard}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <View style={styles.heroIcon}>
-              <Text style={styles.heroIconText}>
+          <View style={styles.summaryRow}>
+            <View
+              style={[
+                styles.summaryIcon,
+                { backgroundColor: subscription.color || colors.background.elevated },
+              ]}
+            >
+              <Text style={styles.summaryIconText}>
                 {subscription.name.charAt(0).toUpperCase()}
               </Text>
             </View>
-            <Text style={styles.heroName}>{subscription.name}</Text>
-            <Text style={styles.heroAmount}>
-              {formatCurrency(subscription.amount, subscription.currency)}
-              <Text style={styles.heroCycle}>/{subscription.billingCycle}</Text>
-            </Text>
-            {subscription.isCanceled && (
-              <View style={styles.canceledBadge}>
-                <Ionicons name="checkmark-circle" size={16} color="#FFF" />
-                <Text style={styles.canceledText}>Canceled</Text>
-              </View>
-            )}
-          </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.summaryName, { color: colors.text.primary }]} numberOfLines={1}>
+                {subscription.name}
+              </Text>
+              <Text style={[styles.summaryPrice, { color: colors.text.secondary }]}>
+                {formatCurrency(subscription.amount, subscription.currency)} /{" "}
+                {subscription.billingCycle.toLowerCase()}
+              </Text>
+            </View>
+          </View>
+
+          {subscription.isCanceled ? (
+            <View style={[styles.statusPill, { backgroundColor: colors.background.card }]}>
+              <Ionicons name="checkmark-circle" size={15} color={colors.status.success} />
+              <Text style={[styles.statusPillText, { color: colors.status.success }]}>Canceled</Text>
+            </View>
+          ) : (
+            <View style={[styles.statusPill, { backgroundColor: `${valueInfo.color}22` }]}>
+              <Text style={[styles.statusPillText, { color: valueInfo.color }]}>{valueInfo.label}</Text>
+            </View>
+          )}
+
+          <View style={[styles.infoCard, { backgroundColor: colors.background.card }]}>
+            <View style={[styles.infoRow, { borderBottomColor: colors.border.light }]}>
+              <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Next billing</Text>
+              <Text style={[styles.infoValue, { color: colors.text.primary }]}>
+                {formatDate(subscription.nextBillingDate)} ({daysUntil}d)
+              </Text>
+            </View>
+            <View style={[styles.infoRow, { borderBottomColor: colors.border.light }]}>
+              <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Category</Text>
+              <Text style={[styles.infoValue, { color: colors.text.primary }]}>
+                {subscription.category
+                  ? subscription.category.charAt(0).toUpperCase() + subscription.category.slice(1)
+                  : "Other"}
+              </Text>
+            </View>
+            <View style={[styles.infoRow, { borderBottomColor: colors.border.light }]}>
+              <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Start date</Text>
+              <Text style={[styles.infoValue, { color: colors.text.primary }]}>
+                {formatDate(subscription.startDate)}
+              </Text>
+            </View>
+            <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+              <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Billing cycle</Text>
+              <Text style={[styles.infoValue, { color: colors.text.primary }]}>
+                {subscription.billingCycle === "custom"
+                  ? `Every ${subscription.customCycleDays} days`
+                  : subscription.billingCycle.charAt(0).toUpperCase() + subscription.billingCycle.slice(1)}
+              </Text>
+            </View>
+          </View>
+
+          {!subscription.isCanceled && (
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: colors.background.card }]}
+                onPress={handleLogUsage}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="list-outline" size={17} color={colors.text.primary} />
+                <Text style={[styles.actionButtonText, { color: colors.text.primary }]}>Log usage</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: `${colors.status.error}1A` }]}
+                onPress={handleOpenCancelPage}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="close-circle-outline" size={17} color={colors.status.error} />
+                <Text style={[styles.actionButtonText, { color: colors.status.error }]}>
+                  Cancel subscription
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {subscription.isSilent && !subscription.isCanceled && (
             <View
@@ -469,78 +527,6 @@ export default function SubscriptionDetailScreen() {
             </View>
           )}
 
-          <View
-            style={[
-              styles.section,
-              { backgroundColor: colors.background.card },
-            ]}
-          >
-            <View style={styles.sectionHeader}>
-              <LinearGradient
-                colors={
-                  colors.gradient.secondary as readonly [
-                    string,
-                    string,
-                    ...string[],
-                  ]
-                }
-                style={styles.sectionIconGradient}
-              >
-                <Ionicons name="calendar" size={18} color="#FFF" />
-              </LinearGradient>
-              <Text
-                style={[styles.sectionTitle, { color: colors.text.primary }]}
-              >
-                Billing Info
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.infoRow,
-                { borderBottomColor: colors.border.light },
-              ]}
-            >
-              <Text
-                style={[styles.infoLabel, { color: colors.text.secondary }]}
-              >
-                Next Payment
-              </Text>
-              <Text style={[styles.infoValue, { color: colors.text.primary }]}>
-                {formatDate(subscription.nextBillingDate)} ({daysUntil}d)
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.infoRow,
-                { borderBottomColor: colors.border.light },
-              ]}
-            >
-              <Text
-                style={[styles.infoLabel, { color: colors.text.secondary }]}
-              >
-                Billing Cycle
-              </Text>
-              <Text style={[styles.infoValue, { color: colors.text.primary }]}>
-                {subscription.billingCycle === "custom"
-                  ? `Every ${subscription.customCycleDays} days`
-                  : subscription.billingCycle.charAt(0).toUpperCase() +
-                    subscription.billingCycle.slice(1)}
-              </Text>
-            </View>
-
-            <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
-              <Text
-                style={[styles.infoLabel, { color: colors.text.secondary }]}
-              >
-                Started
-              </Text>
-              <Text style={[styles.infoValue, { color: colors.text.primary }]}>
-                {formatDate(subscription.startDate)}
-              </Text>
-            </View>
-          </View>
           {!subscription.isCanceled && (
             <View
               style={[
@@ -727,16 +713,15 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: "center",
   },
-  title: {
-    fontSize: 20,
-    fontWeight: "700",
-    letterSpacing: 0.3,
+  headerActions: {
+    flexDirection: "row",
+    gap: 8,
   },
-  deleteButton: {
+  headerIconButton: {
     width: 40,
     height: 40,
     justifyContent: "center",
-    alignItems: "flex-end",
+    alignItems: "center",
   },
   content: {
     padding: 16,
@@ -750,58 +735,69 @@ const styles = StyleSheet.create({
   loading: {
     fontSize: 16,
   },
-  heroCard: {
-    borderRadius: 28,
-    padding: 36,
+  summaryRow: {
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
+    gap: 14,
+    marginBottom: 14,
   },
-  heroIcon: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: "rgba(255,255,255,0.25)",
+  summaryIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 20,
   },
-  heroIconText: {
-    fontSize: 40,
-    fontWeight: "800",
-    color: "#FFF",
-  },
-  heroName: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: "#FFF",
-    marginBottom: 8,
-    letterSpacing: 0.5,
-  },
-  heroAmount: {
-    fontSize: 36,
-    fontWeight: "800",
-    color: "#FFF",
-    letterSpacing: 0.5,
-  },
-  heroCycle: {
+  summaryIconText: {
     fontSize: 20,
+    fontWeight: "800",
+    color: "#FFF",
+  },
+  summaryName: {
+    fontSize: 21,
+    fontWeight: "800",
+    marginBottom: 3,
+  },
+  summaryPrice: {
+    fontSize: 14,
     fontWeight: "600",
   },
-  canceledBadge: {
-    marginTop: 20,
+  statusPill: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 12,
+    marginBottom: 16,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    borderRadius: 24,
   },
-  canceledText: {
-    color: "#FFF",
-    fontSize: 15,
+  statusPillText: {
+    fontSize: 13,
     fontWeight: "700",
-    letterSpacing: 0.3,
+  },
+  infoCard: {
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    marginBottom: 16,
+  },
+  actionsRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 16,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 16,
+    paddingVertical: 15,
+  },
+  actionButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
   },
   alertCard: {
     marginBottom: 16,

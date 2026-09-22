@@ -1,5 +1,13 @@
 // app/add-subscription.tsx
 import Button from "@/components/Button";
+import {
+  DateInputSheet,
+  OptionSheet,
+  RowCard,
+  TextFieldRow,
+  ToggleRow,
+  ValueRow,
+} from "@/components/FormRow";
 import { BillingCycles, Categories, NotificationOptions } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
@@ -12,11 +20,10 @@ import {
   checkNotificationPermissions,
   scheduleLocalNotification,
 } from "@/services/notifications";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
@@ -26,10 +33,24 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+
+function formatRemindSummary(days: number[]) {
+  if (!days.length) return "Off";
+  return days
+    .slice()
+    .sort((a, b) => b - a)
+    .map((d) => (d === 0 ? "Same day" : `${d}d before`))
+    .join(", ");
+}
 
 export default function AddSubscriptionScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const isEditMode = Boolean(id);
+
+  const [loadingInitial, setLoadingInitial] = useState(isEditMode);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
@@ -37,16 +58,45 @@ export default function AddSubscriptionScreen() {
   const [billingCycle, setBillingCycle] = useState("monthly");
   const [customDays, setCustomDays] = useState("");
   const [category, setCategory] = useState("");
-  const [startDate] = useState(new Date());
+  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [isTrial, setIsTrial] = useState(false);
   const [trialEndDate, setTrialEndDate] = useState("");
   const [notifyDays, setNotifyDays] = useState<number[]>([7, 3, 1, 0]);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
+  const [remindSheetOpen, setRemindSheetOpen] = useState(false);
+  const [dateSheetOpen, setDateSheetOpen] = useState(false);
+  const [categorySheetOpen, setCategorySheetOpen] = useState(false);
+
   useEffect(() => {
-    loadTemplates();
-  }, []);
+    if (!isEditMode) {
+      loadTemplates();
+      return;
+    }
+
+    (async () => {
+      try {
+        const subscription = await subscriptionsApi.getOne(id!);
+        setName(subscription.name);
+        setAmount(String(subscription.amount));
+        setBillingCycle(subscription.billingCycle.toLowerCase());
+        if (subscription.customCycleDays) setCustomDays(String(subscription.customCycleDays));
+        setCategory((subscription.category || "").toLowerCase());
+        setStartDate(subscription.startDate.slice(0, 10));
+        setIsTrial(Boolean(subscription.isTrial));
+        setTrialEndDate(subscription.trialEndDate ? subscription.trialEndDate.slice(0, 10) : "");
+        setNotifyDays(subscription.notifyDaysBefore?.length ? subscription.notifyDaysBefore : [7, 3, 1, 0]);
+        setNotes(subscription.notes || "");
+      } catch (error: any) {
+        Alert.alert("Error", getFriendlyErrorMessage(error, "Could not load this subscription."));
+        router.back();
+      } finally {
+        setLoadingInitial(false);
+      }
+    })();
+  }, [isEditMode, id, router]);
 
   const loadTemplates = async () => {
     try {
@@ -109,6 +159,12 @@ export default function AddSubscriptionScreen() {
       return;
     }
 
+    const parsedStartDate = new Date(startDate);
+    if (!startDate || Number.isNaN(parsedStartDate.getTime())) {
+      Alert.alert("Error", "Please enter a valid start date (YYYY-MM-DD)");
+      return;
+    }
+
     let parsedTrialEndDate: Date | undefined;
     if (isTrial) {
       parsedTrialEndDate = new Date(trialEndDate);
@@ -121,6 +177,25 @@ export default function AddSubscriptionScreen() {
     setLoading(true);
 
     try {
+      if (isEditMode) {
+        const updated = await subscriptionsApi.update(id!, {
+          name: name.trim(),
+          amount: parsedAmount,
+          currency,
+          billingCycle: billingCycle.toUpperCase(),
+          customCycleDays: parsedCustomDays || undefined,
+          category: category || "other",
+          startDate: parsedStartDate.toISOString(),
+          isTrial,
+          trialEndDate: isTrial ? parsedTrialEndDate?.toISOString() : null,
+          notifyDaysBefore: notifyDays,
+          notes: notes.trim() || undefined,
+        });
+        Alert.alert("Saved", "Subscription updated successfully");
+        router.replace(`/subscription/${updated.id}`);
+        return;
+      }
+
       const subscription = await subscriptionsApi.create({
         name: name.trim(),
         amount: parsedAmount,
@@ -129,7 +204,7 @@ export default function AddSubscriptionScreen() {
         billingCycle: billingCycle.toUpperCase(),
         customCycleDays: parsedCustomDays || undefined,
         category: category || "Other",
-        startDate: startDate.toISOString(),
+        startDate: parsedStartDate.toISOString(),
         isTrial,
         trialEndDate: parsedTrialEndDate?.toISOString(),
         // Pass array directly — backend expects z.array(z.number()), not a JSON string
@@ -148,10 +223,10 @@ export default function AddSubscriptionScreen() {
     } catch (error: any) {
       const errorMessage = getFriendlyErrorMessage(
         error,
-        "We could not add this subscription. Please try again.",
+        `We could not ${isEditMode ? "update" : "add"} this subscription. Please try again.`,
       );
       Alert.alert(
-        error.response?.status === 403 ? "Premium Required" : "Could Not Add",
+        error.response?.status === 403 ? "Premium Required" : "Could Not Save",
         errorMessage,
         error.response?.status === 403
           ? [
@@ -165,6 +240,17 @@ export default function AddSubscriptionScreen() {
     }
   };
 
+  const selectedCategory = Categories.find((cat) => cat.id === category);
+  const selectedCycle = BillingCycles.find((cycle) => cycle.id === billingCycle);
+
+  if (loadingInitial) {
+    return (
+      <View style={[styles.root, styles.loadingContainer, { backgroundColor: colors.background.primary }]}>
+        <ActivityIndicator size="large" color={colors.accent.primary} />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.root, { backgroundColor: colors.background.primary }]}>
       <LinearGradient
@@ -173,362 +259,181 @@ export default function AddSubscriptionScreen() {
         pointerEvents="none"
       />
       <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.cancelButton}>
-          <Text style={[styles.cancelText, { color: colors.accent.primary }]}>Cancel</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.titleBlock}>
-        <Text style={[styles.title, { color: colors.text.primary }]}>
-          Add Subscription
-        </Text>
-        <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
-          Fill in the details below to start tracking this subscription.
-        </Text>
-      </View>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.cancelButton}>
+            <Text style={[styles.cancelText, { color: colors.accent.primary }]}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.titleBlock}>
+          <Text style={[styles.title, { color: colors.text.primary }]}>
+            {isEditMode ? "Update subscription" : "Add Subscription"}
+          </Text>
+          <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
+            {isEditMode
+              ? "Edit the details below to keep this subscription accurate."
+              : "Fill in the details below to start tracking this subscription."}
+          </Text>
+        </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-      >
-        {templates.length > 0 && (
-          <View style={styles.templatesSection}>
-            <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>
-              Quick Add
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.templatesScroll}
-            >
-              {templates.map((template) => (
-                <TouchableOpacity
-                  key={template.id}
-                  style={[
-                    styles.templateCard,
-                    { backgroundColor: colors.background.card },
-                  ]}
-                  onPress={() => {
-                    setName(template.name);
-                    if (
-                      "suggestedAmount" in template &&
-                      typeof template.suggestedAmount === "number"
-                    ) {
-                      setAmount(template.suggestedAmount.toString());
-                    } else if (template.avgPrice) {
-                      setAmount(template.avgPrice.toString());
-                    }
-                    if (
-                      "category" in template &&
-                      typeof template.category === "string"
-                    ) {
-                      setCategory(template.category.toLowerCase());
-                    }
-                    if (
-                      "billingCycle" in template &&
-                      typeof template.billingCycle === "string"
-                    ) {
-                      setBillingCycle(template.billingCycle.toLowerCase());
-                    }
-                  }}
-                >
-                  <Text style={styles.templateIcon}>
-                    {template.iconUrl || "📱"}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.templateName,
-                      { color: colors.text.primary },
-                    ]}
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+          {!isEditMode && templates.length > 0 && (
+            <View style={styles.templatesSection}>
+              <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>Quick Add</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templatesScroll}>
+                {templates.map((template) => (
+                  <TouchableOpacity
+                    key={template.id}
+                    style={[styles.templateCard, { backgroundColor: colors.background.card }]}
+                    onPress={() => {
+                      setName(template.name);
+                      if ("suggestedAmount" in template && typeof template.suggestedAmount === "number") {
+                        setAmount(template.suggestedAmount.toString());
+                      } else if (template.avgPrice) {
+                        setAmount(template.avgPrice.toString());
+                      }
+                      if ("category" in template && typeof template.category === "string") {
+                        setCategory(template.category.toLowerCase());
+                      }
+                      if ("billingCycle" in template && typeof template.billingCycle === "string") {
+                        setBillingCycle(template.billingCycle.toLowerCase());
+                      }
+                    }}
                   >
-                    {template.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
+                    <Text style={styles.templateIcon}>{template.iconUrl || "📱"}</Text>
+                    <Text style={[styles.templateName, { color: colors.text.primary }]}>{template.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
 
-        <View
-          style={[styles.form, { backgroundColor: colors.background.card }]}
-        >
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>
-              Subscription Name *
-            </Text>
+          <RowCard style={styles.nameCard}>
             <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.background.elevated,
-                  color: colors.text.primary,
-                  borderColor: colors.border.default,
-                },
-              ]}
+              style={[styles.nameInput, { color: colors.text.primary }]}
               value={name}
               onChangeText={setName}
-              placeholder="e.g., Netflix, Spotify"
+              placeholder="Subscription name (e.g., Netflix)"
               placeholderTextColor={colors.text.muted}
             />
-          </View>
+          </RowCard>
 
-          <View style={styles.inputRow}>
-            <View style={[styles.inputGroup, { flex: 2 }]}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>
-                Amount *
-              </Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.background.elevated,
-                    color: colors.text.primary,
-                    borderColor: colors.border.default,
-                  },
-                ]}
-                value={amount}
-                onChangeText={setAmount}
-                placeholder="0.00"
-                keyboardType="decimal-pad"
-                placeholderTextColor={colors.text.muted}
+          <RowCard style={styles.formCard}>
+            <ToggleRow
+              first
+              label="Trial"
+              subtitle="Get extra alerts before it becomes paid"
+              value={isTrial}
+              onValueChange={setIsTrial}
+            />
+            {isTrial && (
+              <TextFieldRow
+                label="Trial ends"
+                value={trialEndDate}
+                onChangeText={setTrialEndDate}
+                placeholder="YYYY-MM-DD"
               />
-            </View>
-
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>
-                Currency
-              </Text>
-              <View
-                style={[
-                  styles.pickerContainer,
-                  {
-                    backgroundColor: colors.background.elevated,
-                    borderColor: colors.border.default,
-                  },
-                ]}
-              >
-                <Text
-                  style={[styles.pickerText, { color: colors.text.primary }]}
-                >
-                  {currency}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>
-              Billing Cycle *
-            </Text>
-            <View style={styles.cycleButtons}>
-              {BillingCycles.map((cycle) => (
-                <TouchableOpacity
-                  key={cycle.id}
-                  style={[
-                    styles.cycleButton,
-                    {
-                      backgroundColor: colors.background.elevated,
-                      borderColor: colors.border.default,
-                    },
-                    billingCycle === cycle.id && {
-                      borderColor: colors.accent.primary,
-                      backgroundColor: colors.badge.worthItBg,
-                    },
-                  ]}
-                  onPress={() => setBillingCycle(cycle.id)}
-                >
-                  <Text
-                    style={[
-                      styles.cycleButtonText,
-                      {
-                        color:
-                          billingCycle === cycle.id
-                            ? colors.accent.primary
-                            : colors.text.primary,
-                      },
-                    ]}
-                  >
-                    {cycle.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {billingCycle === "custom" && (
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>
-                Custom Days
-              </Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.background.elevated,
-                    color: colors.text.primary,
-                    borderColor: colors.border.default,
-                  },
-                ]}
+            )}
+            <TextFieldRow
+              label="Price"
+              value={amount}
+              onChangeText={setAmount}
+              placeholder="0.00"
+              keyboardType="decimal-pad"
+              prefix="$"
+            />
+            <ValueRow label="Started" value={startDate} onPress={() => setDateSheetOpen(true)} />
+            <ValueRow
+              label="Period"
+              value={selectedCycle?.name || "Monthly"}
+              onPress={() => setPeriodSheetOpen(true)}
+            />
+            {billingCycle === "custom" && (
+              <TextFieldRow
+                label="Custom days"
                 value={customDays}
                 onChangeText={setCustomDays}
                 placeholder="30"
                 keyboardType="number-pad"
-                placeholderTextColor={colors.text.muted}
               />
-            </View>
-          )}
+            )}
+            <ValueRow
+              label="Remind me"
+              value={formatRemindSummary(notifyDays)}
+              onPress={() => setRemindSheetOpen(true)}
+            />
+          </RowCard>
 
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>
-              Category
-            </Text>
-            <View style={styles.categoryButtons}>
-              {Categories.map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[
-                    styles.categoryButton,
-                    {
-                      backgroundColor: colors.background.elevated,
-                      borderColor: colors.border.default,
-                    },
-                    category === cat.id && {
-                      borderColor: colors.accent.primary,
-                      backgroundColor: colors.badge.worthItBg,
-                    },
-                  ]}
-                  onPress={() => setCategory(cat.id)}
-                >
-                  <Text style={styles.categoryIcon}>{cat.icon}</Text>
-                  <Text
-                    style={[
-                      styles.categoryLabel,
-                      {
-                        color:
-                          category === cat.id
-                            ? colors.accent.primary
-                            : colors.text.primary,
-                      },
-                    ]}
-                  >
-                    {cat.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>Trial Protection</Text>
-            <TouchableOpacity
-              style={[
-                styles.toggleRow,
-                {
-                  backgroundColor: colors.background.elevated,
-                  borderColor: isTrial ? colors.accent.primary : colors.border.default,
-                },
-              ]}
-              onPress={() => setIsTrial((current) => !current)}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.toggleTitle, { color: colors.text.primary }]}>This is a free trial</Text>
-                <Text style={[styles.toggleText, { color: colors.text.secondary }]}>Get extra alerts before it becomes paid</Text>
-              </View>
-              <Ionicons
-                name={isTrial ? "toggle" : "toggle-outline"}
-                size={34}
-                color={isTrial ? colors.accent.primary : colors.text.muted}
-              />
-            </TouchableOpacity>
-          </View>
-
-          {isTrial && (
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Trial End Date</Text>
+          <RowCard style={styles.formCard}>
+            <ValueRow
+              first
+              label="Category"
+              value={selectedCategory ? `${selectedCategory.icon} ${selectedCategory.name}` : "Other"}
+              onPress={() => setCategorySheetOpen(true)}
+            />
+            <View style={styles.notesRow}>
+              <Text style={[styles.notesLabel, { color: colors.text.primary }]}>Notes</Text>
               <TextInput
                 style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.background.elevated,
-                    color: colors.text.primary,
-                    borderColor: colors.border.default,
-                  },
+                  styles.notesInput,
+                  { color: colors.text.primary, borderColor: colors.border.default },
                 ]}
-                value={trialEndDate}
-                onChangeText={setTrialEndDate}
-                placeholder="YYYY-MM-DD"
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Add any notes..."
                 placeholderTextColor={colors.text.muted}
+                multiline
+                numberOfLines={3}
               />
             </View>
-          )}
+          </RowCard>
 
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>Smart Reminders</Text>
-            <View style={styles.reminderButtons}>
-              {NotificationOptions.map((option) => {
-                const selected = notifyDays.includes(option.days);
-                return (
-                  <TouchableOpacity
-                    key={option.days}
-                    style={[
-                      styles.reminderButton,
-                      {
-                        backgroundColor: selected ? colors.badge.worthItBg : colors.background.elevated,
-                        borderColor: selected ? colors.accent.primary : colors.border.default,
-                      },
-                    ]}
-                    onPress={() =>
-                      setNotifyDays((current) =>
-                        selected
-                          ? current.filter((day) => day !== option.days)
-                          : [...current, option.days].sort((a, b) => b - a),
-                      )
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.reminderText,
-                        { color: selected ? colors.accent.primary : colors.text.primary },
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>
-              Notes (Optional)
-            </Text>
-            <TextInput
-              style={[
-                styles.textArea,
-                {
-                  backgroundColor: colors.background.elevated,
-                  color: colors.text.primary,
-                  borderColor: colors.border.default,
-                },
-              ]}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Add any notes..."
-              placeholderTextColor={colors.text.muted}
-              multiline
-              numberOfLines={3}
-            />
-          </View>
-        </View>
-
-        <Button
-          title={loading ? "Adding..." : "Add Subscription"}
-          onPress={handleSubmit}
-          disabled={loading}
-          style={styles.submitButton}
-        />
-      </ScrollView>
+          <Button
+            title={loading ? (isEditMode ? "Saving..." : "Adding...") : isEditMode ? "Save" : "Add Subscription"}
+            onPress={handleSubmit}
+            disabled={loading}
+            style={styles.submitButton}
+          />
+        </ScrollView>
       </SafeAreaView>
+
+      <OptionSheet
+        visible={periodSheetOpen}
+        title="Period"
+        options={BillingCycles.map((cycle) => ({ id: cycle.id, label: cycle.name }))}
+        selectedIds={[billingCycle]}
+        onToggle={setBillingCycle}
+        onClose={() => setPeriodSheetOpen(false)}
+      />
+      <OptionSheet
+        visible={categorySheetOpen}
+        title="Category"
+        options={Categories.map((cat) => ({ id: cat.id, label: `${cat.icon} ${cat.name}` }))}
+        selectedIds={[category]}
+        onToggle={setCategory}
+        onClose={() => setCategorySheetOpen(false)}
+      />
+      <OptionSheet
+        visible={remindSheetOpen}
+        title="Remind me"
+        multiSelect
+        options={NotificationOptions.map((option) => ({ id: String(option.days), label: option.label }))}
+        selectedIds={notifyDays.map(String)}
+        onToggle={(idValue) => {
+          const day = Number(idValue);
+          setNotifyDays((current) =>
+            current.includes(day)
+              ? current.filter((d) => d !== day)
+              : [...current, day].sort((a, b) => b - a),
+          );
+        }}
+        onClose={() => setRemindSheetOpen(false)}
+      />
+      <DateInputSheet
+        visible={dateSheetOpen}
+        value={startDate}
+        onChangeText={setStartDate}
+        onClose={() => setDateSheetOpen(false)}
+      />
     </View>
   );
 }
@@ -537,6 +442,7 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   pageGlow: { position: "absolute", top: 0, left: 0, right: 0, height: 420 },
   safeArea: { flex: 1 },
+  loadingContainer: { justifyContent: "center", alignItems: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -571,9 +477,10 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 100,
+    gap: 14,
   },
   templatesSection: {
-    marginBottom: 20,
+    marginBottom: -2,
   },
   sectionLabel: {
     fontSize: 16,
@@ -600,125 +507,20 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
-  form: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  label: {
+  nameCard: { paddingVertical: 4 },
+  nameInput: { fontSize: 18, fontWeight: "800", paddingVertical: 14 },
+  formCard: {},
+  notesRow: { paddingVertical: 15, gap: 8 },
+  notesLabel: { fontSize: 15, fontWeight: "600" },
+  notesInput: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 12,
     fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  input: {
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
-    borderWidth: 1,
-  },
-  textArea: {
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
-    borderWidth: 1,
-    minHeight: 80,
+    minHeight: 70,
     textAlignVertical: "top",
   },
-  pickerContainer: {
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  pickerText: {
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  cycleButtons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  cycleButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 2,
-  },
-  cycleButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  categoryButtons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  categoryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 2,
-  },
-  categoryIcon: {
-    fontSize: 16,
-  },
-  categoryLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  toggleRow: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16,
-  },
-  toggleTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 3,
-  },
-  toggleText: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  reminderButtons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  reminderButton: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  reminderText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },  submitButton: {
-    marginTop: 8,
+  submitButton: {
+    marginTop: 4,
   },
 });
-
-
-
-
-
-
-
