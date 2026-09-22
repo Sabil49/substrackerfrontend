@@ -4,6 +4,7 @@ import { isAppleAuthAvailable } from "@/config/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage } from "@/services/api";
+import { Ionicons } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -105,7 +106,7 @@ export default function SignupScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Text style={styles.markGlyph}>$</Text>
+            <Ionicons name="speedometer-outline" size={28} color="#fff" />
           </LinearGradient>
 
           <Text style={[styles.headline, { color: colors.text.primary }]}>
@@ -209,7 +210,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 4,
   },
-  markGlyph: { fontSize: 28, fontWeight: "800", color: "#fff" },
   headline: { fontSize: 26, fontWeight: "800", textAlign: "center" },
   lede: { fontSize: 14, fontWeight: "500", textAlign: "center", marginBottom: 10 },
   card: { borderRadius: 24, paddingHorizontal: 18 },

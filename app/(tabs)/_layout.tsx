@@ -56,8 +56,6 @@ export default function TabsLayout() {
           ),
         }}
       />
-      {/* Legacy route kept out of the tab bar; profile.tsx now redirects to account. */}
-      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }

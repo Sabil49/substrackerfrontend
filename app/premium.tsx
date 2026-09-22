@@ -122,7 +122,7 @@ export default function PremiumScreen() {
       setIsPremium(true);
 
       Alert.alert("Success", "Premium restored successfully!", [
-        { text: "OK", onPress: () => router.replace("/profile") },
+        { text: "OK", onPress: () => router.replace("/(tabs)/account") },
       ]);
     } catch (error) {
       Alert.alert(
@@ -179,7 +179,7 @@ export default function PremiumScreen() {
         setIsPremium(true);
 
         Alert.alert("Success", "Premium activated successfully!", [
-          { text: "OK", onPress: () => router.replace("/profile") },
+          { text: "OK", onPress: () => router.replace("/(tabs)/account") },
         ]);
       } catch (e) {
         console.error("PURCHASE LISTENER ERROR:", e);

@@ -88,7 +88,6 @@ function RootLayoutContent() {
         <Stack.Screen name="subscription/[id]" />
         <Stack.Screen name="add-subscription" />
         <Stack.Screen name="import-subscription" />
-        <Stack.Screen name="settings" />
         <Stack.Screen name="premium" />
       </Stack>
     </>

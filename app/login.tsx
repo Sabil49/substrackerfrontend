@@ -4,6 +4,7 @@ import { isAppleAuthAvailable } from "@/config/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage } from "@/services/api";
+import { Ionicons } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -101,14 +102,14 @@ export default function LoginScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Text style={styles.markGlyph}>$</Text>
+            <Ionicons name="speedometer-outline" size={28} color="#fff" />
           </LinearGradient>
 
           <Text style={[styles.headline, { color: colors.text.primary }]}>
             Welcome back
           </Text>
           <Text style={[styles.lede, { color: colors.text.muted }]}>
-            Log in to sync your subscriptions
+            Log in to keep tracking your subscriptions.
           </Text>
 
           <View style={[styles.card, { backgroundColor: colors.background.card }]}>
@@ -138,6 +139,15 @@ export default function LoginScreen() {
               />
             </View>
           </View>
+
+          <TouchableOpacity
+            onPress={() => router.push("/forgot-password")}
+            style={styles.forgotRow}
+          >
+            <Text style={[styles.forgotText, { color: colors.accent.primary }]}>
+              Forgot password?
+            </Text>
+          </TouchableOpacity>
 
           <Button
             title="Log In"
@@ -202,14 +212,15 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 4,
   },
-  markGlyph: { fontSize: 28, fontWeight: "800", color: "#fff" },
   headline: { fontSize: 26, fontWeight: "800", textAlign: "center" },
   lede: { fontSize: 14, fontWeight: "500", textAlign: "center", marginBottom: 10 },
   card: { borderRadius: 24, paddingHorizontal: 18 },
   inputRow: { paddingVertical: 12, borderTopWidth: 1, gap: 6 },
   inputLabel: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
   input: { fontSize: 16, fontWeight: "600", padding: 0 },
-  primaryButton: { marginTop: 6 },
+  forgotRow: { alignSelf: "flex-end", marginTop: 10 },
+  forgotText: { fontSize: 13, fontWeight: "700" },
+  primaryButton: { marginTop: 14 },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: 4 },
   dividerLine: { flex: 1, height: 1 },
   dividerText: { fontSize: 12, fontWeight: "600" },
