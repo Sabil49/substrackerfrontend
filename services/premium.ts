@@ -1,8 +1,7 @@
 import { httpsCallable } from "firebase/functions";
 import { Platform } from "react-native";
 import * as RNIap from "react-native-iap";
-import { auth, functionsInstance } from "@/config/firebase";
-import { getGuestId } from "@/utils/storage";
+import { functionsInstance } from "@/config/firebase";
 
 export const PREMIUM_PRODUCT_IDS = Platform.OS === 'android'
   ? ['com.substracker.monthly', 'com.substracker.yearly'] as const
@@ -31,7 +30,6 @@ async function postStorePurchase(
   purchase: any,
   mode: "verify" | "restore",
 ) {
-  const guestId = auth.currentUser ? undefined : await getGuestId();
   const storeToken = getStoreToken(purchase);
 
   if (!storeToken) {
@@ -54,7 +52,6 @@ async function postStorePurchase(
       ...(Platform.OS === "ios"
         ? { signedTransaction: storeToken }
         : { purchaseToken: storeToken }),
-      ...(guestId ? { guestId } : {}),
     });
     const result = response.data as any;
     if (!result?.isPro) {

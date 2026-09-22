@@ -1,13 +1,13 @@
 // app/contexts/AuthContext.tsx
 import { auth, GOOGLE_WEB_CLIENT_ID, isAppleAuthAvailable } from "@/config/firebase";
 import { authApi, User, userApi } from "@/services/api";
-import { clearGuestSession, getGuestId } from "@/utils/storage";
 import * as AppleAuthentication from "expo-apple-authentication";
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   OAuthProvider,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithCredential,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
@@ -31,17 +31,15 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Completing the backend session sync (fold in guest data, get back the
-// app-level user/premium object) after any Firebase sign-in succeeds.
+// Completing the backend session sync (getting back the app-level
+// user/premium object) after any Firebase sign-in succeeds.
 async function syncBackendSession(): Promise<User> {
-  const guestId = await getGuestId().catch(() => undefined);
-  const user = await authApi.syncSession(guestId);
-  await clearGuestSession();
-  return user;
+  return authApi.syncSession();
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -121,8 +119,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
     setAppUser(null);
-    // Caller (Account screen) is responsible for clearing/re-establishing the
-    // guest session afterward via clearGuestSession()/getGuestId().
+  }, []);
+
+  const resetPassword = useCallback(async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
   }, []);
 
   return (
@@ -137,6 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInWithGoogle,
         signInWithApple,
         signOut,
+        resetPassword,
       }}
     >
       {children}

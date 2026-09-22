@@ -1,43 +1,36 @@
 // app/_layout.tsx
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { testApiConnectivity } from "@/services/api";
 import { registerForPushNotifications } from "@/services/notifications";
 import { syncPremiumEntitlement } from "@/services/premium";
-import { getGuestId } from "@/utils/storage";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
+// Routes reachable while signed out. Everything else requires auth.
+const PUBLIC_ROUTES = ["login", "signup", "forgot-password"];
+
 function RootLayoutContent() {
   const [isReady, setIsReady] = useState(false);
   const { colors } = useTheme();
+  const { firebaseUser, initializing: authInitializing } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
 
   useEffect(() => {
     async function initializeApp() {
       try {
-        // Test API connectivity first
         const isApiReachable = await testApiConnectivity();
         if (!isApiReachable) {
           console.warn(
             "⚠️ API may not be reachable - app will work in offline mode",
           );
         }
-
-        // Must get/create guest session BEFORE any API calls are made
-        await getGuestId();
-        // Reconcile Premium with Apple/Google before rendering gated features.
-        await syncPremiumEntitlement();
       } catch (error) {
-        console.error("Failed to initialize guest session:", error);
+        console.error("Failed to reach Cloud Functions:", error);
         // Continue anyway — subscriptions screen will show error state
-      }
-
-      try {
-        await registerForPushNotifications();
-      } catch (error) {
-        console.log("Push notification init error:", error);
       } finally {
         setIsReady(true);
       }
@@ -46,7 +39,28 @@ function RootLayoutContent() {
     initializeApp();
   }, []);
 
-  if (!isReady) {
+  // These need an authenticated caller now that guest mode is gone, so they
+  // run once sign-in resolves rather than at cold start.
+  useEffect(() => {
+    if (!firebaseUser) return;
+    syncPremiumEntitlement();
+    registerForPushNotifications().catch((error) =>
+      console.log("Push notification init error:", error),
+    );
+  }, [firebaseUser]);
+
+  // Hard login gate: no guest browsing anywhere in the app.
+  useEffect(() => {
+    if (!isReady || authInitializing) return;
+    const onPublicRoute = PUBLIC_ROUTES.includes(segments[0] as string);
+    if (!firebaseUser && !onPublicRoute) {
+      router.replace("/login");
+    } else if (firebaseUser && onPublicRoute) {
+      router.replace("/(tabs)");
+    }
+  }, [isReady, authInitializing, firebaseUser, segments, router]);
+
+  if (!isReady || authInitializing) {
     return (
       <View
         style={[styles.loading, { backgroundColor: colors.background.primary }]}

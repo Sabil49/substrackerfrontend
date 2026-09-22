@@ -1,6 +1,5 @@
 // app/(tabs)/account.tsx
 // Merged Profile + Settings into one Account screen, matching Account.png.
-import Button from "@/components/Button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage, User, userApi } from "@/services/api";
@@ -15,6 +14,7 @@ import {
 import { restorePremiumFromStore } from "@/services/premium";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
@@ -38,7 +38,6 @@ export default function AccountScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
-  const isLoggedIn = Boolean(firebaseUser);
 
   const loadUser = async () => {
     try {
@@ -47,7 +46,7 @@ export default function AccountScreen() {
       const hasPermission = await checkNotificationPermissions();
       setNotificationsEnabled(hasPermission);
     } catch {
-      console.log("Could not load user profile (guest mode)");
+      console.log("Could not load user profile");
       setUser(null);
     }
   };
@@ -162,12 +161,8 @@ export default function AccountScreen() {
       await removePushTokenFromServer(deviceToken).catch(() => {});
     }
     await firebaseSignOut();
-    await import("@/utils/storage").then((m) => m.clearGuestSession());
-    if (deviceToken) {
-      await sendPushTokenToServer(deviceToken).catch(() => {});
-    }
     setUser(null);
-    router.replace("/");
+    router.replace("/login");
   };
 
   const handleDeleteAccount = () => {
@@ -183,18 +178,14 @@ export default function AccountScreen() {
             setIsDeletingAccount(true);
             try {
               await userApi.deleteAccount();
-              await firebaseSignOut();
-              await import("@/utils/storage").then(async (m) => {
-                await m.clearGuestSession();
-                await m.getGuestId();
-              });
               const deviceToken = await AsyncStorage.getItem("deviceToken");
               if (deviceToken) {
-                await sendPushTokenToServer(deviceToken).catch(() => {});
+                await removePushTokenFromServer(deviceToken).catch(() => {});
               }
+              await firebaseSignOut();
               setUser(null);
               Alert.alert("Account Deleted", "Your Substracker account was deleted.");
-              router.replace("/");
+              router.replace("/login");
             } catch (error) {
               console.error("Failed to delete account:", error);
               Alert.alert(
@@ -210,7 +201,7 @@ export default function AccountScreen() {
     );
   };
 
-  const initial = (user?.email?.trim().charAt(0) || (isLoggedIn ? "?" : "G")).toUpperCase();
+  const initial = (user?.email?.trim().charAt(0) || firebaseUser?.email?.trim().charAt(0) || "?").toUpperCase();
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background.primary }]}>
@@ -236,7 +227,7 @@ export default function AccountScreen() {
             </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={[styles.email, { color: colors.text.primary }]} numberOfLines={1}>
-                {user?.email ?? "Guest User"}
+                {user?.email ?? firebaseUser?.email ?? "Account"}
               </Text>
               <View
                 style={[
@@ -311,33 +302,29 @@ export default function AccountScreen() {
           <View style={[styles.card, { backgroundColor: colors.background.card }]}>
             <View style={[styles.row, { borderTopColor: colors.border.light, borderTopWidth: 0 }]}>
               <Text style={[styles.rowLabel, { color: colors.text.secondary }]}>Version</Text>
-              <Text style={[styles.rowValue, { color: colors.text.primary }]}>1.1.0</Text>
+              <Text style={[styles.rowValue, { color: colors.text.primary }]}>
+                {Constants.expoConfig?.version ?? "—"}
+              </Text>
             </View>
           </View>
 
           <View style={[styles.card, { backgroundColor: colors.background.card }]}>
-            {isLoggedIn ? (
-              <>
-                <TouchableOpacity
-                  style={[styles.row, { borderTopColor: colors.border.light, borderTopWidth: 0 }]}
-                  onPress={handleSignOut}
-                  disabled={isDeletingAccount}
-                >
-                  <Text style={[styles.destructiveLabel, { color: colors.status.error }]}>Sign Out</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.row, { borderTopColor: colors.border.light }]}
-                  onPress={handleDeleteAccount}
-                  disabled={isDeletingAccount}
-                >
-                  <Text style={[styles.destructiveLabel, { color: colors.status.error }]}>
-                    {isDeletingAccount ? "Deleting..." : "Delete Account"}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <Button title="Sign In / Sign Up" onPress={() => router.push("/login")} />
-            )}
+            <TouchableOpacity
+              style={[styles.row, { borderTopColor: colors.border.light, borderTopWidth: 0 }]}
+              onPress={handleSignOut}
+              disabled={isDeletingAccount}
+            >
+              <Text style={[styles.destructiveLabel, { color: colors.status.error }]}>Sign Out</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.row, { borderTopColor: colors.border.light }]}
+              onPress={handleDeleteAccount}
+              disabled={isDeletingAccount}
+            >
+              <Text style={[styles.destructiveLabel, { color: colors.status.error }]}>
+                {isDeletingAccount ? "Deleting..." : "Delete Account"}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity onPress={handleRestorePurchase} disabled={isRestoring} style={styles.restoreLink}>

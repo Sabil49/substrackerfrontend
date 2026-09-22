@@ -1,7 +1,6 @@
 // app/services/api.ts
 import { httpsCallable } from "firebase/functions";
-import { functionsInstance, auth } from "../config/firebase";
-import { getGuestId } from "../utils/storage";
+import { functionsInstance } from "../config/firebase";
 
 // Kept only so other files that still import API_URL for display/logging
 // don't break — Cloud Functions calls no longer go through a base URL like
@@ -21,26 +20,13 @@ export const testApiConnectivity = async (): Promise<boolean> => {
 
 // Every callable already gets the signed-in user's Firebase ID token
 // attached automatically by the Functions client SDK — unlike the old axios
-// setup, there's no manual token-fetch/interceptor step. `guestId` is sent
-// alongside on every call; the backend only uses it when there's no
-// authenticated caller, so it's harmless to include even when signed in.
+// setup, there's no manual token-fetch/interceptor step. Every caller is
+// authenticated (the app requires sign-in before it renders any screen that
+// calls these), so no guest fallback is needed here.
 async function callFn<TResult = any>(name: string, data: Record<string, any> = {}): Promise<TResult> {
-  let guestId: string | undefined;
-  if (!auth.currentUser) {
-    try {
-      guestId = await getGuestId();
-    } catch (error) {
-      console.warn("⚠️ Could not get guestId, proceeding without it", error);
-    }
-  }
-
-  try {
-    const callable = httpsCallable(functionsInstance, name);
-    const response = await callable({ ...data, ...(guestId ? { guestId } : {}) });
-    return response.data as TResult;
-  } catch (error) {
-    throw error;
-  }
+  const callable = httpsCallable(functionsInstance, name);
+  const response = await callable(data);
+  return response.data as TResult;
 }
 
 export function getFriendlyErrorMessage(
@@ -285,8 +271,8 @@ export const userApi = {
 export const authApi = {
   // Call once right after Firebase Auth sign-in succeeds (any provider).
   // The ID token is attached automatically by the Functions client SDK.
-  syncSession: async (guestId?: string): Promise<User> => {
-    const response = await callFn<{ user: User }>("syncSession", { guestId });
+  syncSession: async (): Promise<User> => {
+    const response = await callFn<{ user: User }>("syncSession");
     return response.user;
   },
 };
@@ -308,8 +294,6 @@ export const templatesApi = {
 
 export const deviceApi = {
   register: async (deviceToken: string, platform: "ios" | "android"): Promise<void> => {
-    // Allow registration for both authenticated and guest users — callFn
-    // attaches guestId automatically when nobody is signed in.
     await callFn("registerDevice", { deviceToken, platform });
   },
 
