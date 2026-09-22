@@ -2,6 +2,7 @@
 import Button from "@/components/Button";
 import {
   DateInputSheet,
+  formatRemindSummary,
   OptionSheet,
   RowCard,
   TextFieldRow,
@@ -34,15 +35,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-
-function formatRemindSummary(days: number[]) {
-  if (!days.length) return "Off";
-  return days
-    .slice()
-    .sort((a, b) => b - a)
-    .map((d) => (d === 0 ? "Same day" : `${d}d before`))
-    .join(", ");
-}
 
 export default function AddSubscriptionScreen() {
   const router = useRouter();

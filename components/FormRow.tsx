@@ -153,6 +153,15 @@ export interface SheetOption {
   label: string;
 }
 
+export function formatRemindSummary(days: number[]) {
+  if (!days.length) return "Off";
+  return days
+    .slice()
+    .sort((a, b) => b - a)
+    .map((d) => (d === 0 ? "Same day" : `${d}d before`))
+    .join(", ");
+}
+
 export function OptionSheet({
   visible,
   title,
