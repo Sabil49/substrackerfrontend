@@ -220,7 +220,7 @@ export default function SubscriptionDetailScreen() {
         <View style={styles.headerActions}>
           {!subscription.isCanceled && (
             <TouchableOpacity
-              onPress={() => router.push(`/add-subscription?id=${id}`)}
+              onPress={() => router.push({ pathname: "/add-subscription", params: { id } })}
               style={styles.headerIconButton}
             >
               <Ionicons name="pencil-outline" size={20} color={colors.text.primary} />

@@ -176,7 +176,7 @@ export default function AddSubscriptionScreen() {
           currency,
           billingCycle: billingCycle.toUpperCase(),
           customCycleDays: parsedCustomDays || undefined,
-          category: category || "other",
+          category: category || "Other",
           startDate: parsedStartDate.toISOString(),
           isTrial,
           trialEndDate: isTrial ? parsedTrialEndDate?.toISOString() : null,
