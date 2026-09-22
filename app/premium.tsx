@@ -27,14 +27,32 @@ const SUBSCRIPTION_SKUS = [...PREMIUM_PRODUCT_IDS];
 
 const FEATURES = [
   {
-    icon: "∞",
     title: "Unlimited Subscriptions",
-    description: "Track as many subscriptions as you need",
+    description: "Track every recurring charge without the free-plan limit",
   },
   {
-    icon: "📊",
-    title: "Advanced Analytics",
-    description: "Detailed spending insights and trends",
+    title: "Smart Renewal Reminders",
+    description: "Get alerts 7 days, 3 days, 1 day, and on renewal day",
+  },
+  {
+    title: "Trial Ending Alerts",
+    description: "Protect free trials before they quietly become paid",
+  },
+  {
+    title: "Renewal Calendar",
+    description: "See what is charging next and plan your month",
+  },
+  {
+    title: "Receipt Import",
+    description: "Find subscriptions from screenshots or receipts without bank linking",
+  },
+  {
+    title: "Savings Tracker",
+    description: "Spot subscriptions to cancel and track money saved",
+  },
+  {
+    title: "Cancellation Help",
+    description: "Open the right store page and mark cancellations cleanly",
   },
 ];
 
@@ -63,6 +81,18 @@ type PlanId = (typeof PRODUCTS)[number]["id"];
 const getStoreProductId = (item: any) =>
   item?.id || item?.productId || item?.sku || item?.productIdAndroid;
 
+
+const isAlreadyOwnedError = (error: any) => {
+  const code = String(error?.code || error?.responseCode || "").toLowerCase();
+  const message = String(error?.message || error?.debugMessage || "").toLowerCase();
+  return (
+    code.includes("already") ||
+    code.includes("owned") ||
+    message.includes("already owned") ||
+    message.includes("item is already owned") ||
+    message.includes("you are currently subscribed")
+  );
+};
 const finishPurchase = async (purchase: any) => {
   try {
     await (RNIap as any).finishTransaction({
@@ -84,6 +114,29 @@ export default function PremiumScreen() {
   const [storeProducts, setStoreProducts] = useState<any[]>([]);
   const [isPremium, setIsPremium] = useState(false);
 
+  const handleRestore = useCallback(async () => {
+    setRestoreLoading(true);
+
+    try {
+      await restorePremiumFromStore();
+      setIsPremium(true);
+
+      Alert.alert("Success", "Premium restored successfully!", [
+        { text: "OK", onPress: () => router.replace("/profile") },
+      ]);
+    } catch (error) {
+      Alert.alert(
+        "Restore Error",
+        getFriendlyErrorMessage(
+          error,
+          "There was a problem restoring your purchase. Please try again later.",
+        ),
+      );
+      console.error("Error restoring purchase", error);
+    } finally {
+      setRestoreLoading(false);
+    }
+  }, [router]);
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -140,6 +193,19 @@ export default function PremiumScreen() {
 
     const purchaseErrorSub = RNIap.purchaseErrorListener((error) => {
       console.warn("IAP purchase error", error);
+
+      if (isAlreadyOwnedError(error)) {
+        Alert.alert(
+          "Premium Already Owned",
+          "Apple says this subscription is already owned. Restore your purchase to unlock Premium on this Substracker profile.",
+          [
+            { text: "Not Now", style: "cancel" },
+            { text: "Restore", onPress: handleRestore },
+          ],
+        );
+        return;
+      }
+
       Alert.alert(
         "Purchase error",
         error.message || "An error occurred during purchase.",
@@ -151,7 +217,7 @@ export default function PremiumScreen() {
       purchaseErrorSub.remove();
       RNIap.endConnection();
     };
-  }, [router]);
+  }, [router, handleRestore]);
 
   const handleUpgrade = async () => {
     setLoading(true);
@@ -213,30 +279,6 @@ export default function PremiumScreen() {
     }
   };
 
-  const handleRestore = async () => {
-    setRestoreLoading(true);
-
-    try {
-      await restorePremiumFromStore();
-      setIsPremium(true);
-
-      Alert.alert("Success", "Premium restored successfully!", [
-        { text: "OK", onPress: () => router.replace("/profile") },
-      ]);
-    } catch (error) {
-      Alert.alert(
-        "Restore Error",
-        getFriendlyErrorMessage(
-          error,
-          "There was a problem restoring your purchase. Please try again later.",
-        ),
-      );
-      console.error("Error restoring purchase", error);
-    } finally {
-      setRestoreLoading(false);
-    }
-  };
-
   const getDisplayedPrice = (plan: (typeof PRODUCTS)[number]) => {
     const storeProduct = storeProducts.find(
       (item: any) => getStoreProductId(item) === plan.productId,
@@ -250,23 +292,20 @@ export default function PremiumScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background.primary }]}
-      edges={["top"]}
-    >
+    <View style={[styles.root, { backgroundColor: colors.background.primary }]}>
+      <LinearGradient
+        colors={colors.gradient.pageGlow as readonly [string, string, ...string[]]}
+        style={styles.pageGlow}
+        pointerEvents="none"
+      />
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}
-          style={styles.backButton}
+          style={[styles.closeButton, { backgroundColor: "rgba(255,255,255,0.08)" }]}
         >
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+          <Ionicons name="close" size={18} color={colors.text.secondary} />
         </TouchableOpacity>
-
-        <Text style={[styles.headerTitle, { color: colors.text.primary }]}>
-          Premium
-        </Text>
-
-        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView
@@ -275,20 +314,20 @@ export default function PremiumScreen() {
       >
         <LinearGradient
           colors={
-            colors.gradient.accent as readonly [string, string, ...string[]]
+            colors.gradient.guard as readonly [string, string, ...string[]]
           }
           style={styles.heroCard}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          <Text style={styles.heroIcon}>⭐</Text>
+          <Ionicons name="sparkles" size={34} color="#fff" style={styles.heroIcon} />
           <Text style={styles.heroTitle}>
             {isPremium ? "Premium is Active" : "Upgrade to Premium"}
           </Text>
           <Text style={styles.heroSubtitle}>
             {isPremium
-              ? "Unlimited subscriptions and advanced analytics are unlocked"
-              : "Unlock unlimited subscriptions and advanced analytics"}
+              ? "Unlimited subscriptions, reminders, calendar, and savings tools are unlocked"
+              : "Find forgotten subscriptions and stop surprise renewals without linking your bank"}
           </Text>
         </LinearGradient>
 
@@ -396,7 +435,9 @@ export default function PremiumScreen() {
                 { backgroundColor: colors.background.card },
               ]}
             >
-              <Text style={styles.featureIcon}>{feature.icon}</Text>
+              <View style={[styles.featureCheck, { backgroundColor: "rgba(168,85,247,0.18)" }]}>
+                <Ionicons name="checkmark" size={14} color="#A855F7" />
+              </View>
 
               <View style={styles.featureText}>
                 <Text
@@ -492,30 +533,37 @@ export default function PremiumScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  root: { flex: 1 },
+  pageGlow: { position: "absolute", top: 0, left: 0, right: 0, height: 480 },
+  safeArea: { flex: 1 },
   header: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingTop: 8,
   },
-  backButton: { width: 40, height: 40, justifyContent: "center" },
-  headerTitle: { fontSize: 20, fontWeight: "700", letterSpacing: 0.3 },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   scrollView: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
   heroCard: {
     borderRadius: 28,
-    padding: 40,
+    padding: 36,
     alignItems: "center",
     marginBottom: 28,
   },
-  heroIcon: { fontSize: 56, marginBottom: 16 },
+  heroIcon: { marginBottom: 16 },
   heroTitle: {
     fontSize: 28,
     fontWeight: "800",
@@ -595,9 +643,24 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginHorizontal: 4,
   },
+  featureCheck: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   featureTitle: { fontSize: 15, fontWeight: "700", marginBottom: 3 },
   featureDescription: { fontSize: 13, fontWeight: "400", lineHeight: 18 },
   upgradeButton: { marginBottom: 16 },
   restoreButton: { marginBottom: 24 },
   terms: { fontSize: 12, textAlign: "center", lineHeight: 18 },
 });
+
+
+
+
+
+
+
+

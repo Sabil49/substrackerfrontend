@@ -13,18 +13,18 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.background.secondary,
-          borderTopColor: colors.border.default,
+          backgroundColor: "rgba(14,14,18,0.96)",
+          borderTopColor: colors.border.light,
           borderTopWidth: 1,
-          height: 60 + insets.bottom,
+          height: 62 + insets.bottom,
           paddingBottom: insets.bottom,
-          paddingTop: 8,
+          paddingTop: 10,
         },
         tabBarActiveTintColor: colors.accent.primary,
         tabBarInactiveTintColor: colors.text.muted,
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: "500",
+          fontWeight: "700",
           marginBottom: 4,
         },
       }}
@@ -32,30 +32,32 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Subscriptions",
+          title: "Home",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="list" size={size} color={color} />
+            <Ionicons name="home-outline" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="analytics"
         options={{
-          title: "Analytics",
+          title: "Statistics",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="analytics" size={size} color={color} />
+            <Ionicons name="time-outline" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="account"
         options={{
-          title: "Profile",
+          title: "Settings",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
+            <Ionicons name="settings-outline" size={size} color={color} />
           ),
         }}
       />
+      {/* Legacy route kept out of the tab bar; profile.tsx now redirects to account. */}
+      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }

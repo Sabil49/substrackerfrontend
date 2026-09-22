@@ -1,33 +1,18 @@
 // app/utils/storage.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
-import { Platform } from "react-native";
-import Constants from "expo-constants";
+import { httpsCallable } from "firebase/functions";
+import { functionsInstance } from "../config/firebase";
 
+// Auth session state (the SecureStore-backed JWT this app used to manage
+// itself) now lives in Firebase Auth's own persisted session — see
+// contexts/AuthContext.tsx and config/firebase.ts. This file only tracks the
+// anonymous guest-mode session, which is separate from Firebase Auth.
 export const STORAGE_KEYS = {
   GUEST_ID: "guestId",
-  AUTH_TOKEN: "authToken",
   DEVICE_TOKEN: "deviceToken",
   ONBOARDING_COMPLETED: "onboardingCompleted",
   NOTIFICATION_PERMISSION_ASKED: "notificationPermissionAsked",
 };
-
-const staticDefaultApiUrl = "https://substrackerapi.vercel.app";
-const emulatorFallbackUrl =
-  Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://127.0.0.1:3000";
-
-const expoExtra =
-  (Constants.expoConfig as any)?.extra ||
-  (Constants.manifest as any)?.extra ||
-  {};
-const envUrl =
-  process.env.EXPO_PUBLIC_API_URL?.trim() ||
-  (expoExtra?.EXPO_PUBLIC_API_URL as string)?.trim() ||
-  (expoExtra?.API_URL as string)?.trim();
-
-const shouldUseEmulatorUrl = __DEV__ && !Constants.isDevice;
-export const API_URL =
-  envUrl || (shouldUseEmulatorUrl ? emulatorFallbackUrl : staticDefaultApiUrl);
 
 // A valid server-issued guestId looks like: guest_<32 hex chars>
 // Old client-generated ones look like: guest_<uuid-v4 with dashes>
@@ -58,29 +43,13 @@ export function getGuestId(): Promise<string> {
           );
         }
 
-        console.log(
-          "🌐 Requesting new guest session from:",
-          `${API_URL}/api/guest`,
-        );
+        console.log("🌐 Requesting new guest session from Cloud Functions");
 
         // Request a server-side guest session
-        const response = await fetch(`${API_URL}/api/guest`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
-
-        console.log("📡 Guest API response status:", response.status);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("❌ Guest API error:", response.status, errorText);
-          throw new Error(
-            `Server returned ${response.status} for /api/guest: ${errorText}`,
-          );
-        }
-
-        const data = await response.json();
-        console.log("📦 Guest API response data:", data);
+        const createGuestSession = httpsCallable(functionsInstance, "createGuestSession");
+        const response = await createGuestSession();
+        const data = response.data as { guestId: string };
+        console.log("📦 Guest session response data:", data);
 
         const guestId: string = data.guestId;
 
@@ -106,39 +75,6 @@ export function getGuestId(): Promise<string> {
     })();
   }
   return guestIdPromise;
-}
-
-export async function setAuthToken(token: string) {
-  try {
-    await SecureStore.setItemAsync(STORAGE_KEYS.AUTH_TOKEN, token);
-  } catch (error) {
-    console.error("[setAuthToken] Failed to store auth token securely:", error);
-    throw new Error("Failed to securely store authentication token");
-  }
-}
-
-export async function getAuthToken(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(STORAGE_KEYS.AUTH_TOKEN);
-  } catch (error) {
-    console.error(
-      "[getAuthToken] Failed to retrieve auth token from secure store:",
-      error,
-    );
-    return null;
-  }
-}
-
-export async function clearAuthToken() {
-  try {
-    await SecureStore.deleteItemAsync(STORAGE_KEYS.AUTH_TOKEN);
-  } catch (error) {
-    console.error(
-      "[clearAuthToken] Failed to delete auth token from secure store:",
-      error,
-    );
-    throw new Error("Failed to clear authentication token");
-  }
 }
 
 export async function clearGuestSession() {

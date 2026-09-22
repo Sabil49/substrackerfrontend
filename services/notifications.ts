@@ -88,6 +88,7 @@ export async function scheduleLocalNotification(
   currency: string,
   daysUntil: number,
   scheduledDate: Date,
+  subscriptionId?: string,
 ) {
   let title: string;
   let body: string;
@@ -124,7 +125,7 @@ export async function scheduleLocalNotification(
       body,
       sound: true,
       priority: Notifications.AndroidNotificationPriority.MAX,
-      data: { subscriptionName, daysUntil },
+      data: { subscriptionId, subscriptionName, daysUntil },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -133,6 +134,27 @@ export async function scheduleLocalNotification(
   });
 }
 
+export async function cancelLocalNotificationsForSubscription(
+  subscriptionId: string,
+  subscriptionName?: string,
+) {
+  const scheduledNotifications =
+    await Notifications.getAllScheduledNotificationsAsync();
+
+  await Promise.all(
+    scheduledNotifications
+      .filter((notification) => {
+        const data = notification.content.data || {};
+        return (
+          data.subscriptionId === subscriptionId ||
+          (!!subscriptionName && data.subscriptionName === subscriptionName)
+        );
+      })
+      .map((notification) =>
+        Notifications.cancelScheduledNotificationAsync(notification.identifier),
+      ),
+  );
+}
 export async function cancelAllScheduledNotifications() {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }

@@ -1,6 +1,6 @@
 // app/add-subscription.tsx
 import Button from "@/components/Button";
-import { BillingCycles, Categories } from "@/constants/theme";
+import { BillingCycles, Categories, NotificationOptions } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
   getFriendlyErrorMessage,
@@ -8,7 +8,12 @@ import {
   Template,
   templatesApi,
 } from "@/services/api";
+import {
+  checkNotificationPermissions,
+  scheduleLocalNotification,
+} from "@/services/notifications";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
@@ -33,8 +38,9 @@ export default function AddSubscriptionScreen() {
   const [customDays, setCustomDays] = useState("");
   const [category, setCategory] = useState("");
   const [startDate] = useState(new Date());
-  const [isTrial] = useState(false);
-  const [notifyDays] = useState<number[]>([7, 3, 1, 0]);
+  const [isTrial, setIsTrial] = useState(false);
+  const [trialEndDate, setTrialEndDate] = useState("");
+  const [notifyDays, setNotifyDays] = useState<number[]>([7, 3, 1, 0]);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -49,6 +55,36 @@ export default function AddSubscriptionScreen() {
     } catch {
       console.error("Failed to load templates");
     }
+  };
+
+  const scheduleLocalReminders = async (
+    subscription: Awaited<ReturnType<typeof subscriptionsApi.create>>,
+  ) => {
+    const permissionsEnabled = await checkNotificationPermissions();
+    if (!permissionsEnabled) return;
+
+    const nextBillingDate = new Date(subscription.nextBillingDate);
+    if (Number.isNaN(nextBillingDate.getTime())) return;
+
+    const reminderDays = subscription.notifyDaysBefore?.length
+      ? subscription.notifyDaysBefore
+      : notifyDays;
+
+    await Promise.all(
+      reminderDays.map((daysBefore) => {
+        const scheduledDate = new Date(nextBillingDate);
+        scheduledDate.setDate(scheduledDate.getDate() - daysBefore);
+
+        return scheduleLocalNotification(
+          subscription.name,
+          Number(subscription.amount),
+          subscription.currency,
+          daysBefore,
+          scheduledDate,
+          subscription.id,
+        );
+      }),
+    );
   };
 
   const handleSubmit = async () => {
@@ -73,10 +109,19 @@ export default function AddSubscriptionScreen() {
       return;
     }
 
+    let parsedTrialEndDate: Date | undefined;
+    if (isTrial) {
+      parsedTrialEndDate = new Date(trialEndDate);
+      if (!trialEndDate || Number.isNaN(parsedTrialEndDate.getTime())) {
+        Alert.alert("Error", "Please enter a valid trial end date");
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
-      await subscriptionsApi.create({
+      const subscription = await subscriptionsApi.create({
         name: name.trim(),
         amount: parsedAmount,
         currency,
@@ -86,11 +131,17 @@ export default function AddSubscriptionScreen() {
         category: category || "Other",
         startDate: startDate.toISOString(),
         isTrial,
+        trialEndDate: parsedTrialEndDate?.toISOString(),
         // Pass array directly — backend expects z.array(z.number()), not a JSON string
         notifyDaysBefore: notifyDays,
         notes: notes.trim() || undefined,
         isActive: true,
       });
+      try {
+        await scheduleLocalReminders(subscription);
+      } catch (notificationError) {
+        console.warn("Failed to schedule local reminders:", notificationError);
+      }
 
       Alert.alert("Success", "Subscription added successfully");
       router.back();
@@ -115,21 +166,25 @@ export default function AddSubscriptionScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background.primary }]}
-      edges={["top"]}
-    >
+    <View style={[styles.root, { backgroundColor: colors.background.primary }]}>
+      <LinearGradient
+        colors={colors.gradient.pageGlow as readonly [string, string, ...string[]]}
+        style={styles.pageGlow}
+        pointerEvents="none"
+      />
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+        <TouchableOpacity onPress={() => router.back()} style={styles.cancelButton}>
+          <Text style={[styles.cancelText, { color: colors.accent.primary }]}>Cancel</Text>
         </TouchableOpacity>
+      </View>
+      <View style={styles.titleBlock}>
         <Text style={[styles.title, { color: colors.text.primary }]}>
           Add Subscription
         </Text>
-        <View style={{ width: 40 }} />
+        <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
+          Fill in the details below to start tracking this subscription.
+        </Text>
       </View>
 
       <ScrollView
@@ -364,6 +419,86 @@ export default function AddSubscriptionScreen() {
           </View>
 
           <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: colors.text.primary }]}>Trial Protection</Text>
+            <TouchableOpacity
+              style={[
+                styles.toggleRow,
+                {
+                  backgroundColor: colors.background.elevated,
+                  borderColor: isTrial ? colors.accent.primary : colors.border.default,
+                },
+              ]}
+              onPress={() => setIsTrial((current) => !current)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.toggleTitle, { color: colors.text.primary }]}>This is a free trial</Text>
+                <Text style={[styles.toggleText, { color: colors.text.secondary }]}>Get extra alerts before it becomes paid</Text>
+              </View>
+              <Ionicons
+                name={isTrial ? "toggle" : "toggle-outline"}
+                size={34}
+                color={isTrial ? colors.accent.primary : colors.text.muted}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {isTrial && (
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.text.primary }]}>Trial End Date</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.background.elevated,
+                    color: colors.text.primary,
+                    borderColor: colors.border.default,
+                  },
+                ]}
+                value={trialEndDate}
+                onChangeText={setTrialEndDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.text.muted}
+              />
+            </View>
+          )}
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: colors.text.primary }]}>Smart Reminders</Text>
+            <View style={styles.reminderButtons}>
+              {NotificationOptions.map((option) => {
+                const selected = notifyDays.includes(option.days);
+                return (
+                  <TouchableOpacity
+                    key={option.days}
+                    style={[
+                      styles.reminderButton,
+                      {
+                        backgroundColor: selected ? colors.badge.worthItBg : colors.background.elevated,
+                        borderColor: selected ? colors.accent.primary : colors.border.default,
+                      },
+                    ]}
+                    onPress={() =>
+                      setNotifyDays((current) =>
+                        selected
+                          ? current.filter((day) => day !== option.days)
+                          : [...current, option.days].sort((a, b) => b - a),
+                      )
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.reminderText,
+                        { color: selected ? colors.accent.primary : colors.text.primary },
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+          <View style={styles.inputGroup}>
             <Text style={[styles.label, { color: colors.text.primary }]}>
               Notes (Optional)
             </Text>
@@ -393,29 +528,42 @@ export default function AddSubscriptionScreen() {
           style={styles.submitButton}
         />
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  root: { flex: 1 },
+  pageGlow: { position: "absolute", top: 0, left: 0, right: 0, height: 420 },
+  safeArea: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingTop: 12,
   },
-  backButton: {
-    width: 40,
-    height: 40,
+  cancelButton: {
+    height: 32,
     justifyContent: "center",
   },
-  title: {
-    fontSize: 18,
+  cancelText: {
+    fontSize: 16,
     fontWeight: "600",
+  },
+  titleBlock: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   scrollView: {
     flex: 1,
@@ -531,7 +679,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
   },
-  submitButton: {
+  toggleRow: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+  },
+  toggleTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 3,
+  },
+  toggleText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  reminderButtons: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  reminderButton: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  reminderText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },  submitButton: {
     marginTop: 8,
   },
 });
+
+
+
+
+
+
+

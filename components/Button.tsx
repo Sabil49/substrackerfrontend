@@ -1,6 +1,5 @@
 // app/components/Button.tsx
 import { BorderRadius, Typography } from "@/constants/theme";
-import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import {
   ActivityIndicator,
@@ -38,24 +37,19 @@ export default function Button({
       <TouchableOpacity
         onPress={onPress}
         disabled={disabled || loading}
-        style={[styles.button, disabled && styles.disabled, style]}
-        activeOpacity={0.8}
+        style={[
+          styles.button,
+          { backgroundColor: colors.accent.primary },
+          disabled && styles.disabled,
+          style,
+        ]}
+        activeOpacity={0.85}
       >
-        <LinearGradient
-          colors={
-            (colors.gradient.accent as readonly [string, string, ...string[]]) ||
-            [colors.accent.primary, colors.accent.secondary]
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.gradient}
-        >
-          {loading ? (
-            <ActivityIndicator color={colors.text.primary} />
-          ) : (
-            <Text style={[styles.primaryText, textStyle]}>{title}</Text>
-          )}
-        </LinearGradient>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={[styles.primaryText, textStyle]}>{title}</Text>
+        )}
       </TouchableOpacity>
     );
   }
@@ -67,6 +61,7 @@ export default function Button({
       style={[
         styles.button,
         styles.secondaryButton,
+        { borderColor: colors.border.default },
         disabled && styles.disabled,
         style,
       ]}
@@ -75,7 +70,11 @@ export default function Button({
       {loading ? (
         <ActivityIndicator color={colors.text.secondary} />
       ) : (
-        <Text style={[styles.secondaryText, textStyle]}>{title}</Text>
+        <Text
+          style={[styles.secondaryText, { color: colors.text.secondary }, textStyle]}
+        >
+          {title}
+        </Text>
       )}
     </TouchableOpacity>
   );
@@ -85,26 +84,21 @@ const styles = StyleSheet.create({
   button: {
     height: 56,
     borderRadius: BorderRadius.medium,
-    overflow: "hidden",
-  },
-  gradient: {
-    flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
   primaryText: {
     ...Typography.body,
-    fontWeight: "600",
+    fontWeight: "800",
     color: "#fff",
   },
   secondaryButton: {
-    justifyContent: "center",
-    alignItems: "center",
     backgroundColor: "transparent",
+    borderWidth: 1.5,
   },
   secondaryText: {
     ...Typography.body,
-    color: "#4B5563",
+    fontWeight: "700",
   },
   disabled: {
     opacity: 0.5,

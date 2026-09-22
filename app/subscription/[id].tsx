@@ -2,6 +2,7 @@
 import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Subscription, subscriptionsApi } from "@/services/api";
+import { cancelLocalNotificationsForSubscription } from "@/services/notifications";
 import { formatCurrency, formatDate, getDaysUntil } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -10,6 +11,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Animated,
+  Image,
   Linking,
   Modal,
   Platform,
@@ -107,6 +109,7 @@ export default function SubscriptionDetailScreen() {
     if (!subscription) return;
     try {
       const updated = await subscriptionsApi.cancel(id!, cancelReason);
+      await cancelLocalNotificationsForSubscription(id!, subscription.name);
       setSubscription(updated);
       setCancelModalVisible(false);
       Alert.alert("✓ Canceled", "Subscription marked as canceled");
@@ -127,6 +130,10 @@ export default function SubscriptionDetailScreen() {
           onPress: async () => {
             try {
               await subscriptionsApi.delete(id!);
+              await cancelLocalNotificationsForSubscription(
+                id!,
+                subscription?.name,
+              );
               router.back();
             } catch {
               Alert.alert("Error", "Failed to delete subscription");
@@ -291,6 +298,34 @@ export default function SubscriptionDetailScreen() {
                 style={styles.alertButton}
               />
             </View>
+          )}
+
+          {subscription.receiptImageUrl && (
+            <TouchableOpacity
+              style={[styles.section, { backgroundColor: colors.background.card }]}
+              onPress={() => Linking.openURL(subscription.receiptImageUrl!)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.sectionHeader}>
+                <LinearGradient
+                  colors={colors.gradient.secondary as readonly [string, string, ...string[]]}
+                  style={styles.sectionIconGradient}
+                >
+                  <Ionicons name="receipt" size={18} color="#FFF" />
+                </LinearGradient>
+                <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
+                  Original Receipt
+                </Text>
+              </View>
+              <Image
+                source={{ uri: subscription.receiptImageUrl }}
+                style={styles.receiptThumbnail}
+                resizeMode="cover"
+              />
+              <Text style={[styles.alertText, { color: colors.accent.primary, marginTop: 8 }]}>
+                View full image
+              </Text>
+            </TouchableOpacity>
           )}
 
           {subscription.usageCount !== undefined &&
@@ -791,6 +826,11 @@ const styles = StyleSheet.create({
   },
   alertButton: {
     marginTop: 8,
+  },
+  receiptThumbnail: {
+    width: "100%",
+    height: 160,
+    borderRadius: 14,
   },
   section: {
     marginBottom: 16,

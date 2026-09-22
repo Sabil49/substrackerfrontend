@@ -1,4 +1,5 @@
 // app/_layout.tsx
+import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { testApiConnectivity } from "@/services/api";
 import { registerForPushNotifications } from "@/services/notifications";
@@ -72,6 +73,7 @@ function RootLayoutContent() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="subscription/[id]" />
         <Stack.Screen name="add-subscription" />
+        <Stack.Screen name="import-subscription" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="premium" />
       </Stack>
@@ -82,7 +84,9 @@ function RootLayoutContent() {
 export default function RootLayout() {
   return (
     <ThemeProvider>
-      <RootLayoutContent />
+      <AuthProvider>
+        <RootLayoutContent />
+      </AuthProvider>
     </ThemeProvider>
   );
 }
@@ -94,3 +98,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 });
+

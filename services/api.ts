@@ -1,167 +1,61 @@
 // app/services/api.ts
-import axios, { AxiosHeaders } from "axios";
-import Constants from "expo-constants";
-import { Platform } from "react-native";
-import { clearAuthToken, getAuthToken, getGuestId } from "../utils/storage";
+import { httpsCallable } from "firebase/functions";
+import { functionsInstance, auth } from "../config/firebase";
+import { getGuestId } from "../utils/storage";
 
-const staticDefaultApiUrl = "https://substrackerapi.vercel.app";
-const emulatorFallbackUrl =
-  Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://127.0.0.1:3000";
+// Kept only so other files that still import API_URL for display/logging
+// don't break — Cloud Functions calls no longer go through a base URL like
+// the old Next.js backend did.
+export const API_URL = "(firebase cloud functions)";
 
-const expoExtra =
-  (Constants.expoConfig as any)?.extra ||
-  (Constants.manifest as any)?.extra ||
-  {};
-const envUrl =
-  process.env.EXPO_PUBLIC_API_URL?.trim() ||
-  (expoExtra?.EXPO_PUBLIC_API_URL as string)?.trim() ||
-  (expoExtra?.API_URL as string)?.trim();
-
-const shouldUseEmulatorUrl = __DEV__ && !Constants.isDevice;
-export const API_URL =
-  envUrl || (shouldUseEmulatorUrl ? emulatorFallbackUrl : staticDefaultApiUrl);
-
-if (!envUrl) {
-  console.warn(
-    `⚠️ EXPO_PUBLIC_API_URL is not set; using ${
-      shouldUseEmulatorUrl ? "emulator/sim URL" : "production default"
-    }`,
-  );
-}
-console.log("🌐 API URL configured as:", API_URL);
-
-// Validate health quickly
 export const testApiConnectivity = async (): Promise<boolean> => {
   try {
-    const resp = await fetch(`${API_URL}/api/health`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (resp.ok) {
-      console.log("✅ API health OK");
-      return true;
-    }
-    console.warn("⚠️ API health returned non-2xx:", resp.status);
-    return false;
+    await callFn("healthCheck", {});
+    console.log("✅ Cloud Functions reachable");
+    return true;
   } catch (err) {
-    console.error("❌ API health check failed:", err);
+    console.error("❌ Cloud Functions health check failed:", err);
     return false;
   }
 };
 
-const api = axios.create({
-  baseURL: `${API_URL}/api`,
-  timeout: 30000,
-  headers: {
-    "Content-Type": "application/json",
-  },
-});
-
-async function attachGuestSession(config: any) {
-  const guestId = await getGuestId();
-  const method = config.method?.toLowerCase();
-  config.headers = AxiosHeaders.from(config.headers);
-  config.headers.delete("Authorization");
-
-  if (method === "get" || method === "delete") {
-    config.params = { ...config.params, guestId };
-    return config;
-  }
-
-  let data = config.data;
-  if (typeof data === "string" && data.trim()) {
+// Every callable already gets the signed-in user's Firebase ID token
+// attached automatically by the Functions client SDK — unlike the old axios
+// setup, there's no manual token-fetch/interceptor step. `guestId` is sent
+// alongside on every call; the backend only uses it when there's no
+// authenticated caller, so it's harmless to include even when signed in.
+async function callFn<TResult = any>(name: string, data: Record<string, any> = {}): Promise<TResult> {
+  let guestId: string | undefined;
+  if (!auth.currentUser) {
     try {
-      data = JSON.parse(data);
-    } catch {
-      data = {};
+      guestId = await getGuestId();
+    } catch (error) {
+      console.warn("⚠️ Could not get guestId, proceeding without it", error);
     }
   }
 
-  config.data = { ...(data || {}), guestId };
-  return config;
+  try {
+    const callable = httpsCallable(functionsInstance, name);
+    const response = await callable({ ...data, ...(guestId ? { guestId } : {}) });
+    return response.data as TResult;
+  } catch (error) {
+    throw error;
+  }
 }
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const isNetworkError = !error.response && error.request;
-    const requestConfig = error.config || {};
-
-    if (
-      error.response?.status === 401 &&
-      !requestConfig.__retryAsGuest &&
-      requestConfig.headers?.Authorization
-    ) {
-      requestConfig.__retryAsGuest = true;
-      await clearAuthToken();
-      await attachGuestSession(requestConfig);
-      return api.request(requestConfig);
-    }
-
-    // Retry once on fallback for situations where emulator localhost is unreachable
-    if (
-      isNetworkError &&
-      !requestConfig.__retry &&
-      requestConfig.baseURL !== `${staticDefaultApiUrl}/api`
-    ) {
-      requestConfig.__retry = true;
-      const fallbackBaseURL = `${staticDefaultApiUrl}/api`;
-      console.warn(
-        `⚠️ Network error‚ retrying on production API: ${requestConfig.baseURL} -> ${fallbackBaseURL}`,
-      );
-      try {
-        return await api.request({
-          ...requestConfig,
-          baseURL: fallbackBaseURL,
-        });
-      } catch (retryError) {
-        // continue to alert below
-        error = retryError;
-      }
-    }
-
-    if (isNetworkError) {
-      error.message =
-        "We could not connect to SubTracker. Check your internet connection and try again.";
-    }
-    return Promise.reject(error);
-  },
-);
-
-api.interceptors.request.use(
-  async (config) => {
-    const token = await getAuthToken();
-    config.headers = AxiosHeaders.from(config.headers);
-    if (token) {
-      config.headers.set("Authorization", `Bearer ${token}`);
-    } else {
-      try {
-        await attachGuestSession(config);
-      } catch (error) {
-        console.warn("⚠️ Could not get guestId, proceeding without it", error);
-      }
-    }
-
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
-
-export default api;
 
 export function getFriendlyErrorMessage(
   error: any,
   fallback = "Something went wrong. Please try again.",
 ) {
-  if (!error?.response && error?.request) {
-    return "We could not connect to SubTracker. Check your internet connection and try again.";
+  // Firebase callable errors: { code: "functions/<name>", message, details }
+  if (typeof error?.code === "string" && error.code.startsWith("functions/")) {
+    if (error.code === "functions/unavailable" || error.code === "functions/deadline-exceeded") {
+      return "We could not connect to SubTracker. Check your internet connection and try again.";
+    }
+    if (typeof error.message === "string" && error.message.trim()) return error.message;
   }
 
-  const message =
-    error?.response?.data?.message ||
-    error?.response?.data?.error ||
-    error?.message;
-
-  if (typeof message === "string" && message.trim()) return message;
+  if (typeof error?.message === "string" && error.message.trim()) return error.message;
   return fallback;
 }
 
@@ -192,6 +86,7 @@ export interface Subscription {
   lastReviewedAt?: string | null;
   usageCount?: number;
   valueScore?: "worth-it" | "overpriced" | "unused";
+  receiptImageUrl?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -235,6 +130,20 @@ export interface Template {
   avgPrice?: number;
 }
 
+
+export interface ImportedSubscription {
+  name: string;
+  amount: number | null;
+  currency: string;
+  billingCycle: string;
+  startDate: string | null;
+  trialEndDate: string | null;
+  isTrial: boolean;
+  category: string;
+  notes: string;
+  confidence: number;
+  receiptImageUrl?: string | null;
+}
 export interface CreateSubscriptionPayload {
   name: string;
   amount: number;
@@ -248,6 +157,7 @@ export interface CreateSubscriptionPayload {
   notifyDaysBefore?: number[];
   notes?: string;
   isActive?: boolean;
+  receiptImageUrl?: string;
 }
 
 export interface UpdateSubscriptionPayload {
@@ -267,6 +177,7 @@ export interface UpdateSubscriptionPayload {
   cancelReason?: string;
   lastReviewedAt?: string;
   usageCount?: number | "increment";
+  receiptImageUrl?: string;
 }
 
 /* ============================
@@ -275,74 +186,80 @@ export interface UpdateSubscriptionPayload {
 
 export const subscriptionsApi = {
   getAll: async (): Promise<Subscription[]> => {
-    const response = await api.get("/subscriptions");
-    return response.data.subscriptions;
+    const response = await callFn<{ subscriptions: Subscription[] }>("getSubscriptions");
+    return response.subscriptions;
   },
 
   getOne: async (id: string): Promise<Subscription> => {
-    const response = await api.get(`/subscriptions/${id}`);
-    return response.data.subscription;
+    const response = await callFn<{ subscription: Subscription }>("getSubscription", { id });
+    return response.subscription;
   },
 
   create: async (data: CreateSubscriptionPayload): Promise<Subscription> => {
-    const payload = {
-      ...data,
-      billingCycle: data.billingCycle.toUpperCase(),
-    };
-    const response = await api.post("/subscriptions", payload);
-    return response.data.subscription;
+    const payload = { ...data, billingCycle: data.billingCycle.toUpperCase() };
+    const response = await callFn<{ subscription: Subscription }>("createSubscription", payload);
+    return response.subscription;
   },
 
-  update: async (
-    id: string,
-    data: UpdateSubscriptionPayload,
-  ): Promise<Subscription> => {
+  update: async (id: string, data: UpdateSubscriptionPayload): Promise<Subscription> => {
     const payload = {
       ...data,
-      ...(data.billingCycle
-        ? { billingCycle: data.billingCycle.toUpperCase() }
-        : {}),
+      id,
+      ...(data.billingCycle ? { billingCycle: data.billingCycle.toUpperCase() } : {}),
     };
-    const response = await api.patch(`/subscriptions/${id}`, payload);
-    return response.data.subscription;
+    const response = await callFn<{ subscription: Subscription }>("updateSubscription", payload);
+    return response.subscription;
   },
 
   delete: async (id: string): Promise<void> => {
-    await api.delete(`/subscriptions/${id}`);
+    await callFn("deleteSubscription", { id });
   },
 
   markReviewed: async (id: string): Promise<Subscription> => {
-    const response = await api.patch(`/subscriptions/${id}`, {
+    const response = await callFn<{ subscription: Subscription }>("updateSubscription", {
+      id,
       lastReviewedAt: new Date().toISOString(),
     });
-    return response.data.subscription;
+    return response.subscription;
   },
 
   logUsage: async (id: string): Promise<Subscription> => {
-    const response = await api.patch(`/subscriptions/${id}`, {
+    const response = await callFn<{ subscription: Subscription }>("updateSubscription", {
+      id,
       usageCount: "increment",
     });
-    return response.data.subscription;
+    return response.subscription;
   },
 
   cancel: async (id: string, cancelReason?: string): Promise<Subscription> => {
-    const response = await api.patch(`/subscriptions/${id}`, {
+    const response = await callFn<{ subscription: Subscription }>("updateSubscription", {
+      id,
       isCanceled: true,
       isActive: false,
       ...(cancelReason ? { cancelReason } : {}),
     });
-    return response.data.subscription;
+    return response.subscription;
   },
 };
 
+
+/* ============================
+   IMPORT API
+============================ */
+
+export const importApi = {
+  receipt: async (data: { imageBase64: string; mimeType?: string }): Promise<ImportedSubscription> => {
+    const response = await callFn<{ subscription: ImportedSubscription }>("importReceipt", data);
+    return response.subscription;
+  },
+};
 /* ============================
    ANALYTICS API
 ============================ */
 
 export const analyticsApi = {
   get: async (): Promise<Analytics> => {
-    const response = await api.get("/analytics");
-    return response.data;
+    return callFn<Analytics>("getAnalytics");
   },
 };
 
@@ -352,12 +269,12 @@ export const analyticsApi = {
 
 export const userApi = {
   get: async (): Promise<User> => {
-    const response = await api.get("/user");
-    return response.data.user;
+    const response = await callFn<{ user: User }>("getUser");
+    return response.user;
   },
 
   deleteAccount: async (): Promise<void> => {
-    await api.delete("/user");
+    await callFn("deleteUser");
   },
 };
 
@@ -366,30 +283,11 @@ export const userApi = {
 ============================ */
 
 export const authApi = {
-  signup: async (
-    email: string,
-    password: string,
-  ): Promise<{ token: string; user: User }> => {
-    const guestId = await getGuestId().catch(() => undefined);
-    const response = await api.post("/auth/signup", { email, password, guestId });
-    return response.data;
-  },
-
-  login: async (
-    email: string,
-    password: string,
-  ): Promise<{ token: string; user: User }> => {
-    const guestId = await getGuestId().catch(() => undefined);
-    const response = await api.post("/auth/login", { email, password, guestId });
-    return response.data;
-  },
-
-  logout: async (): Promise<void> => {
-    try {
-      await api.post("/auth/logout");
-    } catch {
-      // ignore network errors; simply clear token locally
-    }
+  // Call once right after Firebase Auth sign-in succeeds (any provider).
+  // The ID token is attached automatically by the Functions client SDK.
+  syncSession: async (guestId?: string): Promise<User> => {
+    const response = await callFn<{ user: User }>("syncSession", { guestId });
+    return response.user;
   },
 };
 
@@ -399,8 +297,8 @@ export const authApi = {
 
 export const templatesApi = {
   getAll: async (): Promise<Template[]> => {
-    const response = await api.get("/templates");
-    return response.data.templates;
+    const response = await callFn<{ templates: Template[] }>("getTemplates");
+    return response.templates;
   },
 };
 
@@ -409,17 +307,13 @@ export const templatesApi = {
 ============================ */
 
 export const deviceApi = {
-  register: async (
-    deviceToken: string,
-    platform: "ios" | "android",
-  ): Promise<void> => {
-    // Allow registration for both authenticated and guest users.
-    // The request interceptor will attach `guestId` when no auth token is present.
-    await api.post("/devices", { deviceToken, platform });
+  register: async (deviceToken: string, platform: "ios" | "android"): Promise<void> => {
+    // Allow registration for both authenticated and guest users — callFn
+    // attaches guestId automatically when nobody is signed in.
+    await callFn("registerDevice", { deviceToken, platform });
   },
 
   unregister: async (deviceToken: string): Promise<void> => {
-    // Allow unregistration for both authenticated and guest users.
-    await api.delete(`/devices?deviceToken=${encodeURIComponent(deviceToken)}`);
+    await callFn("unregisterDevice", { deviceToken });
   },
 };

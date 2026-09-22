@@ -1,7 +1,8 @@
+import { httpsCallable } from "firebase/functions";
 import { Platform } from "react-native";
 import * as RNIap from "react-native-iap";
-import { API_URL } from "./api";
-import { getAuthToken, getGuestId } from "@/utils/storage";
+import { auth, functionsInstance } from "@/config/firebase";
+import { getGuestId } from "@/utils/storage";
 
 export const PREMIUM_PRODUCT_IDS = Platform.OS === 'android'
   ? ['com.substracker.monthly', 'com.substracker.yearly'] as const
@@ -30,8 +31,7 @@ async function postStorePurchase(
   purchase: any,
   mode: "verify" | "restore",
 ) {
-  const authToken = await getAuthToken();
-  const guestId = authToken ? undefined : await getGuestId();
+  const guestId = auth.currentUser ? undefined : await getGuestId();
   const storeToken = getStoreToken(purchase);
 
   if (!storeToken) {
@@ -42,36 +42,31 @@ async function postStorePurchase(
     );
   }
 
-  const response = await fetch(
-    `${API_URL}/api/user/${
-      mode === "restore" ? "restore-premium" : "verify-premium-purchase"
-    }`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      },
-      body: JSON.stringify({
-        platform: Platform.OS === "ios" ? "ios" : "android",
-        planId: getPremiumPlanId(purchase),
-        ...(Platform.OS === "ios"
-          ? { signedTransaction: storeToken }
-          : { purchaseToken: storeToken }),
-        ...(guestId ? { guestId } : {}),
-      }),
-    },
+  const callable = httpsCallable(
+    functionsInstance,
+    mode === "restore" ? "restorePremium" : "verifyPremiumPurchase",
   );
 
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok || !result.isPro) {
+  try {
+    const response = await callable({
+      platform: Platform.OS === "ios" ? "ios" : "android",
+      planId: getPremiumPlanId(purchase),
+      ...(Platform.OS === "ios"
+        ? { signedTransaction: storeToken }
+        : { purchaseToken: storeToken }),
+      ...(guestId ? { guestId } : {}),
+    });
+    const result = response.data as any;
+    if (!result?.isPro) {
+      throw new Error(`${mode === "restore" ? "Restore" : "Purchase verification"} failed.`);
+    }
+    return result;
+  } catch (error: any) {
     throw new Error(
-      result.error ||
-        result.message ||
+      error?.message ||
         `${mode === "restore" ? "Restore" : "Purchase verification"} failed.`,
     );
   }
-  return result;
 }
 
 export function verifyPremiumPurchase(purchase: any) {

@@ -1,26 +1,26 @@
 // app/constants/theme.ts
 export const Colors = {
   background: {
-    primary: "#F6F8FB",
-    secondary: "#FFFFFF",
-    card: "#FFFFFF",
-    elevated: "#F0F4FF",
+    primary: "#0B0B10",
+    secondary: "#131318",
+    card: "#131318",
+    elevated: "#1A1A22",
   },
   accent: {
-    gold: "#06B6D4",
-    secondary: "#4F46E5",
-    dark: "#0F172A",
+    gold: "#3B82F6",
+    secondary: "#7C3AED",
+    dark: "#0B0B10",
   },
   text: {
-    primary: "#0F172A",
-    secondary: "#4B5563",
-    muted: "#6B7280",
-    disabled: "#9CA3AF",
+    primary: "#FFFFFF",
+    secondary: "#C9C9D3",
+    muted: "#8B8B99",
+    disabled: "#6B6B78",
   },
   status: {
-    success: "#10B981",
+    success: "#34D399",
     warning: "#F59E0B",
-    error: "#EF4444",
+    error: "#F87171",
   },
 };
 
@@ -33,9 +33,9 @@ export const Spacing = {
 };
 
 export const BorderRadius = {
-  small: 8,
-  medium: 16,
-  large: 20,
+  small: 10,
+  medium: 18,
+  large: 26,
 };
 
 export const Typography = {
