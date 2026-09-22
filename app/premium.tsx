@@ -312,24 +312,19 @@ export default function PremiumScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.content}
       >
-        <LinearGradient
-          colors={
-            colors.gradient.guard as readonly [string, string, ...string[]]
-          }
-          style={styles.heroCard}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <Ionicons name="sparkles" size={34} color="#fff" style={styles.heroIcon} />
-          <Text style={styles.heroTitle}>
+        <View style={styles.hero}>
+          <View style={[styles.heroIconWrap, { backgroundColor: colors.badge.worthItBg }]}>
+            <Ionicons name="sparkles" size={28} color={colors.accent.primary} />
+          </View>
+          <Text style={[styles.heroTitle, { color: colors.text.primary }]}>
             {isPremium ? "Premium is Active" : "Upgrade to Premium"}
           </Text>
-          <Text style={styles.heroSubtitle}>
+          <Text style={[styles.heroSubtitle, { color: colors.text.secondary }]}>
             {isPremium
-              ? "Unlimited subscriptions, reminders, calendar, and savings tools are unlocked"
-              : "Find forgotten subscriptions and stop surprise renewals without linking your bank"}
+              ? "Unlimited subscriptions, reminders, calendar, and savings tools are unlocked."
+              : "Find forgotten subscriptions and stop surprise renewals without linking your bank."}
           </Text>
-        </LinearGradient>
+        </View>
 
         {!isPremium && <View style={styles.plansSection}>
           <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
@@ -423,45 +418,21 @@ export default function PremiumScreen() {
         </View>}
 
         <View style={styles.featuresSection}>
-          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
-            Everything Included
-          </Text>
-
           {FEATURES.map((feature, index) => (
-            <View
-              key={index}
-              style={[
-                styles.featureRow,
-                { backgroundColor: colors.background.card },
-              ]}
-            >
-              <View style={[styles.featureCheck, { backgroundColor: "rgba(168,85,247,0.18)" }]}>
-                <Ionicons name="checkmark" size={14} color="#A855F7" />
+            <View key={index} style={styles.featureRow}>
+              <View style={[styles.featureCheck, { backgroundColor: colors.badge.worthItBg }]}>
+                <Ionicons name="checkmark" size={13} color={colors.accent.primary} />
               </View>
-
-              <View style={styles.featureText}>
-                <Text
-                  style={[styles.featureTitle, { color: colors.text.primary }]}
-                >
-                  {feature.title}
-                </Text>
-
-                <Text
-                  style={[
-                    styles.featureDescription,
-                    { color: colors.text.secondary },
-                  ]}
-                >
-                  {feature.description}
-                </Text>
-              </View>
+              <Text style={[styles.featureTitle, { color: colors.text.primary }]}>
+                {feature.title}
+              </Text>
             </View>
           ))}
         </View>
 
         {!isPremium && (
           <Button
-            title={loading ? "Processing..." : "Continue"}
+            title={loading ? "Processing..." : "Get Premium"}
             onPress={handleUpgrade}
             disabled={loading || restoreLoading}
             loading={loading}
@@ -469,24 +440,11 @@ export default function PremiumScreen() {
           />
         )}
 
-        <Button
-          title={restoreLoading ? "Restoring..." : "Restore Purchases"}
-          variant="secondary"
-          onPress={handleRestore}
-          disabled={restoreLoading || loading}
-          loading={restoreLoading}
-          style={styles.restoreButton}
-        />
-
-        <Text
-          style={[
-            styles.optionalText,
-            { color: colors.text.muted, marginBottom: 16 },
-          ]}
-        >
-          You can purchase Premium without creating an account. Signing in is
-          optional and only needed if you want to sync purchases across devices.
-        </Text>
+        <TouchableOpacity onPress={handleRestore} disabled={restoreLoading || loading} style={styles.restoreLink}>
+          <Text style={[styles.restoreLinkText, { color: colors.accent.primary }]}>
+            {restoreLoading ? "Restoring..." : "Restore Purchase"}
+          </Text>
+        </TouchableOpacity>
 
         <View style={{ alignItems: "center" }}>
           <Text
@@ -557,26 +515,28 @@ const styles = StyleSheet.create({
   },
   scrollView: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
-  heroCard: {
-    borderRadius: 28,
-    padding: 36,
+  hero: { alignItems: "center", marginBottom: 28 },
+  heroIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 28,
+    marginBottom: 16,
   },
-  heroIcon: { marginBottom: 16 },
   heroTitle: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "800",
-    color: "#FFF",
     marginBottom: 8,
     letterSpacing: 0.3,
     textAlign: "center",
   },
   heroSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "500",
-    color: "rgba(255,255,255,0.85)",
     textAlign: "center",
+    lineHeight: 20,
+    paddingHorizontal: 8,
   },
   plansSection: { marginBottom: 28 },
   sectionTitle: {
@@ -626,34 +586,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   radioInner: { width: 12, height: 12, borderRadius: 6 },
-  featuresSection: { marginBottom: 28 },
+  featuresSection: { marginBottom: 8 },
   featureRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 10,
+    paddingVertical: 10,
     gap: 14,
   },
-  featureIcon: { fontSize: 28 },
-  featureText: { flex: 1 },
-  optionalText: {
-    fontSize: 13,
-    textAlign: "center",
-    lineHeight: 18,
-    marginHorizontal: 4,
-  },
   featureCheck: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
   },
-  featureTitle: { fontSize: 15, fontWeight: "700", marginBottom: 3 },
-  featureDescription: { fontSize: 13, fontWeight: "400", lineHeight: 18 },
-  upgradeButton: { marginBottom: 16 },
-  restoreButton: { marginBottom: 24 },
+  featureTitle: { fontSize: 15, fontWeight: "700" },
+  upgradeButton: { marginTop: 8, marginBottom: 16 },
+  restoreLink: { alignItems: "center", paddingVertical: 6, marginBottom: 24 },
+  restoreLinkText: { fontSize: 14, fontWeight: "700" },
   terms: { fontSize: 12, textAlign: "center", lineHeight: 18 },
 });
 
