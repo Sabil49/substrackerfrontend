@@ -13,7 +13,8 @@
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryUsageDescription": "Substracker uses your photo library only when you choose a receipt or subscription screenshot to import."
+        "NSPhotoLibraryUsageDescription": "Substracker uses your photo library only when you choose a receipt or subscription screenshot to import.",
+        "NSCameraUsageDescription": "Substracker uses your camera only when you choose to photograph a receipt or subscription screenshot to import."
       }
     },
     "android": {
@@ -60,7 +61,12 @@
           }
         }
       ],
-      "@react-native-google-signin/google-signin",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.976201476870-eprci5h7q38ooru4ensavkqf3j5g4fop"
+        }
+      ],
       "expo-apple-authentication",
       "expo-font",
       "expo-web-browser"
