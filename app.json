@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "substracker",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.sabil.subscriptiontracker",

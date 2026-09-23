@@ -6,7 +6,8 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "store",
+      "autoIncrement": true
     },
     "preview": {
       "distribution": "internal"
@@ -16,6 +17,7 @@
     }
   },
   "submit": {
+    "development": {},
     "production": {}
   }
 }
