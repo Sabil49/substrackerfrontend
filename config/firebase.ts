@@ -54,4 +54,5 @@ try {
 export const auth = authInstance;
 export const functionsInstance = getFunctions(app);
 export const GOOGLE_WEB_CLIENT_ID = readEnv("EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID");
+export const GOOGLE_IOS_CLIENT_ID = readEnv("EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID");
 export const isAppleAuthAvailable = Platform.OS === "ios";

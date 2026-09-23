@@ -1,5 +1,5 @@
 // app/contexts/AuthContext.tsx
-import { auth, GOOGLE_WEB_CLIENT_ID, isAppleAuthAvailable } from "@/config/firebase";
+import { auth, GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, isAppleAuthAvailable } from "@/config/firebase";
 import { authApi, User, userApi } from "@/services/api";
 import * as AppleAuthentication from "expo-apple-authentication";
 import {
@@ -88,7 +88,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { GoogleSignin } = await import(
       "@react-native-google-signin/google-signin"
     );
-    GoogleSignin.configure({ webClientId: GOOGLE_WEB_CLIENT_ID });
+    GoogleSignin.configure({
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+      iosClientId: GOOGLE_IOS_CLIENT_ID,
+    });
     await GoogleSignin.hasPlayServices();
     const result = await GoogleSignin.signIn();
     const idToken = (result as any).idToken || (result as any).data?.idToken;
