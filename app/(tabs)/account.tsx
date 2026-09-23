@@ -227,8 +227,13 @@ export default function AccountScreen() {
             </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={[styles.email, { color: colors.text.primary }]} numberOfLines={1}>
-                {user?.email ?? firebaseUser?.email ?? "Account"}
+                {firebaseUser?.displayName || user?.email || firebaseUser?.email || "Account"}
               </Text>
+              {firebaseUser?.displayName ? (
+                <Text style={[styles.emailSub, { color: colors.text.muted }]} numberOfLines={1}>
+                  {user?.email ?? firebaseUser?.email}
+                </Text>
+              ) : null}
               <View
                 style={[
                   styles.planPill,
@@ -349,7 +354,8 @@ const styles = StyleSheet.create({
   profileRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   avatar: { width: 56, height: 56, borderRadius: 28, justifyContent: "center", alignItems: "center" },
   avatarText: { fontSize: 20, fontWeight: "800", color: "#fff" },
-  email: { fontSize: 17, fontWeight: "700", marginBottom: 6 },
+  email: { fontSize: 17, fontWeight: "700", marginBottom: 2 },
+  emailSub: { fontSize: 12.5, fontWeight: "500", marginBottom: 6 },
   planPill: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8 },
   planPillText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.3 },
   upgradeChip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12 },

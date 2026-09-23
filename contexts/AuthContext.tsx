@@ -11,6 +11,7 @@ import {
   signInWithCredential,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
+  updateProfile,
   User as FirebaseUser,
 } from "firebase/auth";
 import React, {
@@ -27,7 +28,7 @@ interface AuthContextType {
   initializing: boolean;
   refreshAppUser: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
-  signUpWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string, name?: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -73,8 +74,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAppUser(await syncBackendSession());
   }, []);
 
-  const signUpWithEmail = useCallback(async (email: string, password: string) => {
-    await createUserWithEmailAndPassword(auth, email, password);
+  const signUpWithEmail = useCallback(async (email: string, password: string, name?: string) => {
+    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    if (name?.trim()) {
+      await updateProfile(credential.user, { displayName: name.trim() });
+    }
     setAppUser(await syncBackendSession());
   }, []);
 

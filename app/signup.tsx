@@ -24,6 +24,7 @@ export default function SignupScreen() {
   const { colors } = useTheme();
   const { firebaseUser, signUpWithEmail, signInWithGoogle, signInWithApple } =
     useAuth();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState<"email" | "google" | "apple" | null>(
@@ -37,6 +38,10 @@ export default function SignupScreen() {
   }, [firebaseUser, router]);
 
   const handleEmailSignup = async () => {
+    if (!name.trim()) {
+      Alert.alert("Validation", "Please enter your name.");
+      return;
+    }
     if (!email.trim() || !password) {
       Alert.alert("Validation", "Please enter both email and password.");
       return;
@@ -47,7 +52,7 @@ export default function SignupScreen() {
     }
     setLoading("email");
     try {
-      await signUpWithEmail(email.trim(), password);
+      await signUpWithEmail(email.trim(), password, name.trim());
       router.replace("/(tabs)/account");
     } catch (err: any) {
       console.error("[Signup] error", err);
@@ -118,6 +123,18 @@ export default function SignupScreen() {
 
           <View style={[styles.card, { backgroundColor: colors.background.card }]}>
             <View style={[styles.inputRow, { borderTopColor: colors.border.light, borderTopWidth: 0 }]}>
+              <Text style={[styles.inputLabel, { color: colors.text.muted }]}>Name</Text>
+              <TextInput
+                style={[styles.input, { color: colors.text.primary }]}
+                placeholder="Jordan Doe"
+                placeholderTextColor={colors.text.disabled}
+                autoCapitalize="words"
+                autoComplete="name"
+                value={name}
+                onChangeText={setName}
+              />
+            </View>
+            <View style={[styles.inputRow, { borderTopColor: colors.border.light }]}>
               <Text style={[styles.inputLabel, { color: colors.text.muted }]}>Email</Text>
               <TextInput
                 style={[styles.input, { color: colors.text.primary }]}
