@@ -179,9 +179,10 @@ export default function ImportSubscriptionScreen() {
       setConfidence(extracted.confidence);
       setReceiptImageUrl(extracted.receiptImageUrl || null);
     } catch (error: any) {
-      const title = error.response?.status === 403 ? "Premium Required" : "Import Failed";
+      const isPremiumRequired = error?.code === "functions/permission-denied";
+      const title = isPremiumRequired ? "Premium Required" : "Import Failed";
       Alert.alert(title, getFriendlyErrorMessage(error, "We could not read that receipt. Try a clearer screenshot."),
-        error.response?.status === 403
+        isPremiumRequired
           ? [
               { text: "Not Now", style: "cancel" },
               { text: "View Premium", onPress: () => router.push("/premium") },

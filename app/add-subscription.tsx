@@ -217,10 +217,11 @@ export default function AddSubscriptionScreen() {
         error,
         `We could not ${isEditMode ? "update" : "add"} this subscription. Please try again.`,
       );
+      const isPremiumRequired = error?.code === "functions/resource-exhausted";
       Alert.alert(
-        error.response?.status === 403 ? "Premium Required" : "Could Not Save",
+        isPremiumRequired ? "Premium Required" : "Could Not Save",
         errorMessage,
-        error.response?.status === 403
+        isPremiumRequired
           ? [
               { text: "Not Now", style: "cancel" },
               { text: "View Premium", onPress: () => router.push("/premium") },

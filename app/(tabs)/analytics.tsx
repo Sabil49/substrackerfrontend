@@ -1,7 +1,7 @@
 // app/(tabs)/analytics.tsx
 import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
-import { Analytics, analyticsApi } from "@/services/api";
+import { Analytics, analyticsApi, getFriendlyErrorMessage } from "@/services/api";
 import { formatCurrency, formatShortDate } from "@/utils/date";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -35,26 +35,14 @@ export default function AnalyticsScreen() {
       setLoadError(null);
     } catch (error: any) {
       console.error("❌ Failed to load analytics:", error);
-      const errorMessage = error.response?.data?.message ||
-                          error.response?.data?.error ||
-                          error.message ||
-                          "Unknown error occurred";
-      console.error("📋 Error details:", {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        message: error.message
-      });
       setAnalytics(null);
-      if (error.response?.status === 403) {
+      if (error?.code === "functions/permission-denied") {
         setPremiumRequired(true);
         setLoadError(null);
       } else {
         setPremiumRequired(false);
         setLoadError(
-          errorMessage === "Unknown error occurred"
-            ? "We could not load analytics. Pull down to try again."
-            : errorMessage,
+          getFriendlyErrorMessage(error, "We could not load analytics. Pull down to try again."),
         );
       }
     } finally {
