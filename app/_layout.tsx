@@ -2,7 +2,7 @@
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { testApiConnectivity } from "@/services/api";
-import { registerForPushNotifications } from "@/services/notifications";
+import { configureNotificationHandler, registerForPushNotifications } from "@/services/notifications";
 import { syncPremiumEntitlement } from "@/services/premium";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -20,6 +20,7 @@ function RootLayoutContent() {
   const router = useRouter();
 
   useEffect(() => {
+    configureNotificationHandler();
     async function initializeApp() {
       try {
         const isApiReachable = await testApiConnectivity();

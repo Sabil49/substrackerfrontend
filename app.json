@@ -1,12 +1,13 @@
 {
   "expo": {
     "name": "Substracker",
-    "slug": "frontend",
-    "version": "1.1.0",
+    "slug": "substracker-myzoapp",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "substracker",
     "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.sabil.subscriptiontracker",
@@ -72,10 +73,10 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "486ef2cc-70c6-4610-b750-d3384adc48fd"
+        "projectId": "f51bbbb6-2cd9-45c1-84b1-4e927df82404"
       }
     },
-    "owner": "sabil10"
+    "owner": "myzoapp"
   }
 }
 

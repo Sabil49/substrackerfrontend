@@ -6,15 +6,20 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { deviceApi } from "./api";
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// Called once from the root layout's first effect rather than at module
+// import time — defers this native-module call until after the app has
+// mounted, instead of running before anything else has a chance to.
+export function configureNotificationHandler() {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 export async function registerForPushNotifications() {
   if (!Device.isDevice) {
