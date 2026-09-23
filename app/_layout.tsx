@@ -66,7 +66,7 @@ function RootLayoutContent() {
       <View
         style={[styles.loading, { backgroundColor: colors.background.primary }]}
       >
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <ActivityIndicator size="large" color={colors.accent.primary} />
       </View>
     );
@@ -74,7 +74,7 @@ function RootLayoutContent() {
 
   return (
     <>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <Stack
         screenOptions={{
           headerShown: false,
