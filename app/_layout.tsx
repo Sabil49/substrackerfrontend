@@ -41,13 +41,20 @@ function RootLayoutContent() {
   }, []);
 
   // These need an authenticated caller now that guest mode is gone, so they
-  // run once sign-in resolves rather than at cold start.
+  // run once sign-in resolves rather than at cold start. Delayed a couple
+  // seconds past that so IAP/push native-module init doesn't compete with
+  // the app's own launch — a suspected trigger for the early-launch native
+  // crash class documented in facebook/react-native#54859 and similar
+  // issues (an uncaught exception from a native module during startup).
   useEffect(() => {
     if (!firebaseUser) return;
-    syncPremiumEntitlement();
-    registerForPushNotifications().catch((error) =>
-      console.log("Push notification init error:", error),
-    );
+    const timer = setTimeout(() => {
+      syncPremiumEntitlement();
+      registerForPushNotifications().catch((error) =>
+        console.log("Push notification init error:", error),
+      );
+    }, 2000);
+    return () => clearTimeout(timer);
   }, [firebaseUser]);
 
   // Hard login gate: no guest browsing anywhere in the app.
