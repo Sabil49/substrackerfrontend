@@ -9,6 +9,10 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
+// Shows expo-router's error screen (message + Try Again) if any screen throws
+// while rendering, instead of letting the error take the whole app down.
+export { ErrorBoundary } from "expo-router";
+
 // Routes reachable while signed out. Everything else requires auth.
 const PUBLIC_ROUTES = ["login", "signup", "forgot-password"];
 
