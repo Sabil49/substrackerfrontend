@@ -2,6 +2,7 @@
 import Button from "@/components/Button";
 import {
   DateInputSheet,
+  FieldLabel,
   formatDateLabel,
   formatRemindSummary,
   OptionSheet,
@@ -22,7 +23,7 @@ import {
   scheduleLocalNotification,
 } from "@/services/notifications";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -132,41 +133,37 @@ export default function AddSubscriptionScreen() {
     );
   };
 
+  // Required-field check. Computed on every render so an error disappears the
+  // moment the user fixes that field, but only shown after the first Save tap.
+  const [submitted, setSubmitted] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+
+  const parsedAmount = parseFloat(amount);
+  const parsedCustomDays = billingCycle === "custom" ? parseInt(customDays, 10) : undefined;
+  const parsedStartDate = parseYmd(startDate);
+  const parsedTrialEndDate = isTrial ? (parseYmd(trialEndDate) ?? undefined) : undefined;
+
+  const problems: Partial<
+    Record<"name" | "amount" | "customDays" | "startDate" | "trialEndDate", string>
+  > = {};
+  if (!name.trim()) problems.name = "Enter a name for this subscription";
+  if (!amount.trim() || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+    problems.amount = "Enter the price you pay, e.g. 9.99";
+  }
+  if (billingCycle === "custom" && (!Number.isFinite(parsedCustomDays) || parsedCustomDays! <= 0)) {
+    problems.customDays = "Enter how many days";
+  }
+  if (!parsedStartDate) problems.startDate = "Choose the start date";
+  if (isTrial && !parsedTrialEndDate) problems.trialEndDate = "Choose the trial end date";
+
+  const hasProblems = Object.keys(problems).length > 0;
+  const errors = submitted ? problems : {};
+
   const handleSubmit = async () => {
-    if (!name.trim()) {
-      Alert.alert("Name Needed", "Please enter a name for this subscription.");
+    setSubmitted(true);
+    if (hasProblems || !parsedStartDate) {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
-    }
-
-    const parsedAmount = parseFloat(amount);
-    if (!amount || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert("Price Needed", "Please enter the price you pay, for example 9.99.");
-      return;
-    }
-
-    const parsedCustomDays =
-      billingCycle === "custom" ? parseInt(customDays, 10) : undefined;
-    if (
-      billingCycle === "custom" &&
-      (!Number.isFinite(parsedCustomDays) || parsedCustomDays! <= 0)
-    ) {
-      Alert.alert("Billing Days Needed", "Please enter how many days your billing cycle lasts.");
-      return;
-    }
-
-    const parsedStartDate = parseYmd(startDate);
-    if (!parsedStartDate) {
-      Alert.alert("Start Date Needed", "Please choose the date this subscription started.");
-      return;
-    }
-
-    let parsedTrialEndDate: Date | undefined;
-    if (isTrial) {
-      parsedTrialEndDate = parseYmd(trialEndDate) ?? undefined;
-      if (!parsedTrialEndDate) {
-        Alert.alert("Trial End Date Needed", "Please choose the date your free trial ends.");
-        return;
-      }
     }
 
     setLoading(true);
@@ -269,9 +266,18 @@ export default function AddSubscriptionScreen() {
               ? "Edit the details below to keep this subscription accurate."
               : "Fill in the details below to start tracking this subscription."}
           </Text>
+          <Text style={[styles.legend, { color: colors.text.muted }]}>
+            <Text style={{ color: colors.status.error, fontWeight: "800" }}>*</Text>
+            {" Required   ·   Everything else is optional"}
+          </Text>
         </View>
 
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
           {!isEditMode && matchingServices.length > 0 && (
             <View style={styles.templatesSection}>
               <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>
@@ -311,6 +317,9 @@ export default function AddSubscriptionScreen() {
           )}
 
           <RowCard style={styles.nameCard}>
+            <View style={styles.nameLabel}>
+              <FieldLabel label="Name" required error={errors.name} />
+            </View>
             <TextInput
               style={[styles.nameInput, { color: colors.text.primary }]}
               value={name}
@@ -324,6 +333,7 @@ export default function AddSubscriptionScreen() {
             <ToggleRow
               first
               label="Trial"
+              optional
               subtitle="Get extra alerts before it becomes paid"
               value={isTrial}
               onValueChange={setIsTrial}
@@ -331,27 +341,40 @@ export default function AddSubscriptionScreen() {
             {isTrial && (
               <ValueRow
                 label="Trial ends"
+                required
+                error={errors.trialEndDate}
                 value={formatDateLabel(trialEndDate)}
                 onPress={() => setTrialSheetOpen(true)}
               />
             )}
             <TextFieldRow
               label="Price"
+              required
+              error={errors.amount}
               value={amount}
               onChangeText={setAmount}
               placeholder="0.00"
               keyboardType="decimal-pad"
               prefix="$"
             />
-            <ValueRow label="Started" value={formatDateLabel(startDate)} onPress={() => setDateSheetOpen(true)} />
+            <ValueRow
+              label="Started"
+              required
+              error={errors.startDate}
+              value={formatDateLabel(startDate)}
+              onPress={() => setDateSheetOpen(true)}
+            />
             <ValueRow
               label="Period"
+              required
               value={selectedCycle?.name || "Monthly"}
               onPress={() => setPeriodSheetOpen(true)}
             />
             {billingCycle === "custom" && (
               <TextFieldRow
                 label="Custom days"
+                required
+                error={errors.customDays}
                 value={customDays}
                 onChangeText={setCustomDays}
                 placeholder="30"
@@ -360,6 +383,7 @@ export default function AddSubscriptionScreen() {
             )}
             <ValueRow
               label="Remind me"
+              optional
               value={formatRemindSummary(notifyDays)}
               onPress={() => setRemindSheetOpen(true)}
             />
@@ -369,11 +393,12 @@ export default function AddSubscriptionScreen() {
             <ValueRow
               first
               label="Category"
+              optional
               value={selectedCategory ? `${selectedCategory.icon} ${selectedCategory.name}` : "Other"}
               onPress={() => setCategorySheetOpen(true)}
             />
             <View style={styles.notesRow}>
-              <Text style={[styles.notesLabel, { color: colors.text.primary }]}>Notes</Text>
+              <FieldLabel label="Notes" optional />
               <TextInput
                 style={[
                   styles.notesInput,
@@ -388,6 +413,12 @@ export default function AddSubscriptionScreen() {
               />
             </View>
           </RowCard>
+
+          {submitted && hasProblems ? (
+            <Text style={[styles.formError, { color: colors.status.error }]}>
+              Please fill in the required fields marked in red.
+            </Text>
+          ) : null}
 
           <Button
             title={loading ? (isEditMode ? "Saving..." : "Adding...") : isEditMode ? "Save" : "Add Subscription"}
@@ -481,6 +512,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  legend: { fontSize: 12, fontWeight: "600", marginTop: 8 },
+  nameLabel: { paddingTop: 14 },
+  formError: { fontSize: 13, fontWeight: "700", textAlign: "center", marginBottom: 2 },
   scrollView: {
     flex: 1,
   },
@@ -517,8 +551,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
-  nameCard: { paddingVertical: 4 },
-  nameInput: { fontSize: 18, fontWeight: "800", paddingVertical: 14 },
+  nameCard: { paddingVertical: 0 },
+  nameInput: { fontSize: 18, fontWeight: "800", paddingTop: 6, paddingBottom: 14 },
   formCard: {},
   notesRow: { paddingVertical: 15, gap: 8 },
   notesLabel: { fontSize: 15, fontWeight: "600" },

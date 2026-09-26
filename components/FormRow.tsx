@@ -44,6 +44,36 @@ export function RowCard({
   );
 }
 
+// A field label that says whether the field is required (red *) or optional,
+// and shows an inline error underneath once the user has tried to save.
+export function FieldLabel({
+  label,
+  required,
+  optional,
+  error,
+}: {
+  label: string;
+  required?: boolean;
+  optional?: boolean;
+  error?: string;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.labelBlock}>
+      <Text style={[styles.rowLabel, { color: error ? colors.status.error : colors.text.primary }]}>
+        {label}
+        {required ? <Text style={{ color: colors.status.error }}> *</Text> : null}
+        {optional ? (
+          <Text style={[styles.optionalTag, { color: colors.text.muted }]}>{"  Optional"}</Text>
+        ) : null}
+      </Text>
+      {error ? (
+        <Text style={[styles.fieldError, { color: colors.status.error }]}>{error}</Text>
+      ) : null}
+    </View>
+  );
+}
+
 function RowShell({
   first,
   children,
@@ -70,18 +100,20 @@ export function ToggleRow({
   value,
   onValueChange,
   first,
+  optional,
 }: {
   label: string;
   subtitle?: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
   first?: boolean;
+  optional?: boolean;
 }) {
   const { colors } = useTheme();
   return (
     <RowShell first={first}>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.rowLabel, { color: colors.text.primary }]}>{label}</Text>
+        <FieldLabel label={label} optional={optional} />
         {subtitle ? (
           <Text style={[styles.rowSubtitle, { color: colors.text.secondary }]}>{subtitle}</Text>
         ) : null}
@@ -104,6 +136,9 @@ export function TextFieldRow({
   keyboardType,
   prefix,
   first,
+  required,
+  optional,
+  error,
 }: {
   label: string;
   value: string;
@@ -112,11 +147,14 @@ export function TextFieldRow({
   keyboardType?: "default" | "decimal-pad" | "number-pad";
   prefix?: string;
   first?: boolean;
+  required?: boolean;
+  optional?: boolean;
+  error?: string;
 }) {
   const { colors } = useTheme();
   return (
     <RowShell first={first}>
-      <Text style={[styles.rowLabel, { color: colors.text.primary }]}>{label}</Text>
+      <FieldLabel label={label} required={required} optional={optional} error={error} />
       <View style={styles.rowValueGroup}>
         {prefix ? (
           <Text style={[styles.rowValue, { color: colors.text.primary }]}>{prefix}</Text>
@@ -140,16 +178,22 @@ export function ValueRow({
   value,
   onPress,
   first,
+  required,
+  optional,
+  error,
 }: {
   label: string;
   value: string;
   onPress: () => void;
   first?: boolean;
+  required?: boolean;
+  optional?: boolean;
+  error?: string;
 }) {
   const { colors } = useTheme();
   return (
     <RowShell first={first}>
-      <Text style={[styles.rowLabel, { color: colors.text.primary }]}>{label}</Text>
+      <FieldLabel label={label} required={required} optional={optional} error={error} />
       <TouchableOpacity onPress={onPress} style={[styles.rowValueGroup, { flexShrink: 1 }]} activeOpacity={0.6}>
         <Text style={[styles.rowValue, { color: colors.text.primary }]} numberOfLines={1}>
           {value}
@@ -394,6 +438,9 @@ const styles = StyleSheet.create({
   },
   rowLabel: { fontSize: 15, fontWeight: "600" },
   rowSubtitle: { fontSize: 12, fontWeight: "500", marginTop: 3 },
+  labelBlock: { flexShrink: 1 },
+  optionalTag: { fontSize: 11, fontWeight: "600" },
+  fieldError: { fontSize: 12, fontWeight: "600", marginTop: 3 },
   rowValueGroup: { flexDirection: "row", alignItems: "center", gap: 6 },
   rowValue: { fontSize: 15, fontWeight: "700" },
   rowInput: { fontSize: 15, fontWeight: "700", padding: 0, minWidth: 60 },
