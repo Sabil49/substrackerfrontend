@@ -250,7 +250,6 @@ export default function AccountScreen() {
               <Switch
                 value={notificationsEnabled}
                 onValueChange={handleNotificationToggle}
-                disabled={notificationsBusy}
                 trackColor={{ false: colors.background.elevated, true: colors.accent.primary }}
                 thumbColor="#FFF"
               />

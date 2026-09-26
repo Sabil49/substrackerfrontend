@@ -112,7 +112,8 @@ const TECHNICAL_PATTERN =
 function isUserFriendly(message: unknown): message is string {
   if (typeof message !== "string") return false;
   const text = message.trim();
-  return text.length > 0 && text.length <= 180 && !TECHNICAL_PATTERN.test(text);
+  // A real sentence: raw one-word errors ("Required", "Unauthorized") are not.
+  return text.includes(" ") && text.length <= 180 && !TECHNICAL_PATTERN.test(text);
 }
 
 export function getFriendlyErrorMessage(

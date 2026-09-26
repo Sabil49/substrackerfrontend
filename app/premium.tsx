@@ -119,6 +119,17 @@ export default function PremiumScreen() {
   // True only between tapping "Get Premium" and the store's answer, so old
   // transactions the store re-delivers in the background never pop up alerts.
   const purchaseInFlight = useRef(false);
+  // The store can report one failure through both the purchase promise and the
+  // error listener; only the first alert in a short window is shown.
+  const lastAlertAt = useRef(0);
+  const alertOnce = useCallback(
+    (title: string, message: string, buttons?: Parameters<typeof Alert.alert>[2]) => {
+      if (Date.now() - lastAlertAt.current < 2000) return;
+      lastAlertAt.current = Date.now();
+      Alert.alert(title, message, buttons);
+    },
+    [],
+  );
 
   const handleRestore = useCallback(async () => {
     setRestoreLoading(true);
@@ -210,7 +221,7 @@ export default function PremiumScreen() {
 
         // Only tell the user about failures of a purchase they just started.
         if (wasUserInitiated) {
-          Alert.alert(
+          alertOnce(
             "Couldn't Confirm Purchase",
             getFriendlyErrorMessage(e, "We couldn't confirm your purchase. Please try again."),
           );
@@ -227,7 +238,7 @@ export default function PremiumScreen() {
       if (isUserCancelledError(error)) return;
 
       if (isAlreadyOwnedError(error)) {
-        Alert.alert(
+        alertOnce(
           "You're Already Subscribed",
           "This Apple ID already has Premium. Restore your purchase to unlock it here.",
           [
@@ -238,7 +249,7 @@ export default function PremiumScreen() {
         return;
       }
 
-      Alert.alert(
+      alertOnce(
         "Purchase Not Completed",
         getFriendlyErrorMessage(error, "We couldn't complete the purchase. Please try again."),
       );
@@ -250,7 +261,7 @@ export default function PremiumScreen() {
       purchaseErrorSub.remove();
       if (acquired) releaseIapConnection();
     };
-  }, [router, handleRestore]);
+  }, [router, handleRestore, alertOnce]);
 
   const handleUpgrade = async () => {
     setLoading(true);
@@ -311,7 +322,7 @@ export default function PremiumScreen() {
       purchaseInFlight.current = false;
 
       if (!isUserCancelledError(error)) {
-        Alert.alert(
+        alertOnce(
           "Couldn't Start Purchase",
           getFriendlyErrorMessage(error, "We couldn't start the purchase. Please try again."),
         );
