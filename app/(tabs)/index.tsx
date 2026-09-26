@@ -4,6 +4,7 @@ import ServiceIcon from "@/components/ServiceIcon";
 import { findServiceByName } from "@/constants/services";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage, Subscription, subscriptionsApi } from "@/services/api";
+import { syncLocalReminders } from "@/services/notifications";
 import { formatCurrency, formatShortDate, getDaysUntil } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -46,6 +47,8 @@ export default function HomeScreen() {
       setError(null);
       const data = await subscriptionsApi.getAll();
       setSubscriptions(data);
+      // Keep the device's renewal reminders in step with the list.
+      syncLocalReminders(data);
     } catch (err: any) {
       console.error("Failed to load subscriptions:", err);
       const errorMessage = getFriendlyErrorMessage(
@@ -53,7 +56,7 @@ export default function HomeScreen() {
         "We couldn't load your subscriptions. Pull down to try again.",
       );
       setError(errorMessage);
-      if (!loading) Alert.alert("Error", errorMessage);
+      if (!loading) Alert.alert("Couldn't Load Subscriptions", errorMessage);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -237,7 +240,7 @@ export default function HomeScreen() {
     <View style={styles.emptyContainer}>
       <Ionicons name="warning-outline" size={56} color={colors.status.warning} />
       <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>Connection Error</Text>
-      <Text style={[styles.emptyText, { color: colors.text.secondary }]}>{error || "Failed to connect to server"}</Text>
+      <Text style={[styles.emptyText, { color: colors.text.secondary }]}>{error || "We couldn't load your subscriptions. Please try again."}</Text>
       <Button title="Retry" onPress={() => { setLoading(true); loadSubscriptions(); }} style={styles.emptyButton} />
       <Button title="Add Subscription Anyway" onPress={() => router.push("/add-subscription")} variant="secondary" style={styles.emptyButton} />
     </View>

@@ -18,16 +18,13 @@ import {
   getFriendlyErrorMessage,
   importApi,
   subscriptionsApi,
+  userApi,
 } from "@/services/api";
-import {
-  checkNotificationPermissions,
-  scheduleLocalNotification,
-} from "@/services/notifications";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
   Image,
@@ -42,6 +39,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const DEFAULT_REMINDERS = [7, 3, 1, 0];
+
+// The receipt reader accepts images up to about 5 MB (base64 text is ~4/3 the
+// size of the picture), so bigger ones are rejected here with a clear message
+// instead of failing after a long upload.
+const MAX_IMAGE_BASE64_CHARS = 6_500_000;
 
 function normalizeDateInput(value: string | null | undefined) {
   if (!value) return "";
@@ -60,6 +62,9 @@ export default function ImportSubscriptionScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState("image/jpeg");
+  // Receipt scanning is a Premium feature: find out up front, so free users see
+  // an upgrade prompt instead of picking a photo and then being turned away.
+  const [plan, setPlan] = useState<"checking" | "free" | "premium">("checking");
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confidence, setConfidence] = useState<number | null>(null);
@@ -81,6 +86,20 @@ export default function ImportSubscriptionScreen() {
   const [dateSheetOpen, setDateSheetOpen] = useState(false);
   const [trialSheetOpen, setTrialSheetOpen] = useState(false);
   const [categorySheetOpen, setCategorySheetOpen] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      userApi
+        .get()
+        .then((user) => active && setPlan(user.isPro ? "premium" : "free"))
+        // If the check itself fails, don't block — the server enforces it anyway.
+        .catch(() => active && setPlan("premium"));
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
 
   const hasExtraction = Boolean(name || amount || notes || confidence !== null);
 
@@ -107,14 +126,22 @@ export default function ImportSubscriptionScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: false,
-      quality: 0.85,
+      quality: 0.6,
       base64: true,
     });
 
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
     if (!asset.base64) {
-      Alert.alert("Could Not Read Image", "Please choose another screenshot or receipt.");
+      Alert.alert("Couldn't Read Image", "Please choose another screenshot or receipt.");
+      return;
+    }
+
+    if (asset.base64.length > MAX_IMAGE_BASE64_CHARS) {
+      Alert.alert(
+        "Image Too Large",
+        "That image is too large to read. Try a smaller screenshot, or crop it first.",
+      );
       return;
     }
 
@@ -145,14 +172,22 @@ export default function ImportSubscriptionScreen() {
 
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: false,
-      quality: 0.85,
+      quality: 0.6,
       base64: true,
     });
 
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
     if (!asset.base64) {
-      Alert.alert("Could Not Read Image", "Please try again or choose a screenshot from your gallery.");
+      Alert.alert("Couldn't Read Image", "Please try again or choose a screenshot from your gallery.");
+      return;
+    }
+
+    if (asset.base64.length > MAX_IMAGE_BASE64_CHARS) {
+      Alert.alert(
+        "Image Too Large",
+        "That image is too large to read. Try a smaller screenshot, or crop it first.",
+      );
       return;
     }
 
@@ -184,46 +219,18 @@ export default function ImportSubscriptionScreen() {
       setReceiptImageUrl(extracted.receiptImageUrl || null);
     } catch (error: any) {
       const isPremiumRequired = error?.code === "functions/permission-denied";
-      const title = isPremiumRequired ? "Premium Required" : "Import Failed";
+      const title = isPremiumRequired ? "Premium Feature" : "Couldn't Read Receipt";
       Alert.alert(title, getFriendlyErrorMessage(error, "We could not read that receipt. Try a clearer screenshot."),
         isPremiumRequired
           ? [
               { text: "Not Now", style: "cancel" },
-              { text: "View Premium", onPress: () => router.push("/premium") },
+              { text: "Upgrade", onPress: () => router.push("/premium") },
             ]
           : undefined,
       );
     } finally {
       setExtracting(false);
     }
-  };
-
-  const scheduleLocalReminders = async (
-    subscription: Awaited<ReturnType<typeof subscriptionsApi.create>>,
-  ) => {
-    const permissionsEnabled = await checkNotificationPermissions();
-    if (!permissionsEnabled) return;
-
-    const reminderDate = subscription.isTrial && subscription.trialEndDate
-      ? subscription.trialEndDate
-      : subscription.nextBillingDate;
-    const nextBillingDate = new Date(reminderDate);
-    if (Number.isNaN(nextBillingDate.getTime())) return;
-
-    await Promise.all(
-      notifyDays.map((daysBefore) => {
-        const scheduledDate = new Date(nextBillingDate);
-        scheduledDate.setDate(scheduledDate.getDate() - daysBefore);
-        return scheduleLocalNotification(
-          subscription.name,
-          Number(subscription.amount),
-          subscription.currency,
-          daysBefore,
-          scheduledDate,
-          subscription.id,
-        );
-      }),
-    );
   };
 
   const saveSubscription = async () => {
@@ -252,7 +259,7 @@ export default function ImportSubscriptionScreen() {
 
     setSaving(true);
     try {
-      const subscription = await subscriptionsApi.create({
+      await subscriptionsApi.create({
         name: name.trim(),
         amount: parsedAmount,
         currency: currency.trim().toUpperCase() || "USD",
@@ -267,17 +274,14 @@ export default function ImportSubscriptionScreen() {
         ...(receiptImageUrl ? { receiptImageUrl } : {}),
       });
 
-      try {
-        await scheduleLocalReminders(subscription);
-      } catch (notificationError) {
-        console.warn("Failed to schedule imported subscription reminders:", notificationError);
-      }
-
       Alert.alert("Subscription Added", "Imported subscription saved successfully.", [
         { text: "OK", onPress: () => router.replace("/") },
       ]);
     } catch (error: any) {
-      Alert.alert("Could Not Save", getFriendlyErrorMessage(error));
+      Alert.alert(
+        "Couldn't Save",
+        getFriendlyErrorMessage(error, "We couldn't save this subscription. Please try again."),
+      );
     } finally {
       setSaving(false);
     }
@@ -326,7 +330,28 @@ export default function ImportSubscriptionScreen() {
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-        {!hasExtraction && (
+        {!hasExtraction && plan === "free" && (
+          <View style={styles.dropzone}>
+            <View style={[styles.captureIconWrap, { backgroundColor: "rgba(59,130,246,0.16)" }]}>
+              <Ionicons name="sparkles" size={30} color={colors.accent.primary} />
+            </View>
+            <Text style={[styles.dropzoneTitle, { color: colors.text.primary }]}>
+              Receipt scanning is a Premium feature
+            </Text>
+            <Text style={[styles.dropzoneSub, { color: colors.text.muted }]}>
+              Upgrade to add subscriptions from a screenshot or photo, or add this one by hand.
+            </Text>
+            <Button title="Get Premium" onPress={() => router.push("/premium")} style={styles.buttonFull} />
+            <Button
+              title="Add Manually"
+              onPress={() => router.replace("/add-subscription")}
+              variant="secondary"
+              style={styles.buttonFull}
+            />
+          </View>
+        )}
+
+        {!hasExtraction && plan !== "free" && (
           <View style={styles.dropzone}>
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={styles.previewImage} />

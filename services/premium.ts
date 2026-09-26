@@ -66,6 +66,71 @@ export function releaseIapConnection() {
   });
 }
 
+// --- Store errors -----------------------------------------------------------
+// The store reports errors with technical text (product ids, function names).
+// Users only ever see these plain-language messages, chosen by error code.
+const GENERIC_PURCHASE_MESSAGE = "We couldn't complete your purchase. Please try again.";
+
+const PURCHASE_ERROR_MESSAGES: Record<string, string> = {
+  "network-error": "We couldn't connect to the App Store. Check your internet connection and try again.",
+  "service-error": "The App Store isn't available right now. Please try again in a moment.",
+  "remote-error": "The App Store isn't available right now. Please try again in a moment.",
+  "item-unavailable": "Premium isn't available to buy right now. Please try again later.",
+  "sku-not-found": "Premium isn't available to buy right now. Please try again later.",
+  "query-product": "Premium isn't available to buy right now. Please try again later.",
+  "empty-sku-list": "Premium isn't available to buy right now. Please try again later.",
+  "billing-unavailable": "Purchases aren't available on this device right now.",
+  "iap-not-available": "Purchases aren't available on this device right now.",
+  "feature-not-supported": "Purchases aren't available on this device right now.",
+  "not-prepared": "We couldn't connect to the App Store. Please try again.",
+  "init-connection": "We couldn't connect to the App Store. Please try again.",
+  "connection-closed": "We couldn't connect to the App Store. Please try again.",
+  "service-disconnected": "We couldn't connect to the App Store. Please try again.",
+  "pending": "Your purchase is waiting for approval. Premium will unlock as soon as it's approved.",
+  "deferred-payment": "Your purchase is waiting for approval. Premium will unlock as soon as it's approved.",
+  "already-owned": "You're already subscribed. Tap Restore Purchase to unlock Premium.",
+  "item-not-owned": "We couldn't find a Premium subscription on this account.",
+};
+
+export function getPurchaseErrorMessage(error: any): string {
+  const code = String(error?.code ?? "");
+  return PURCHASE_ERROR_MESSAGES[code] ?? GENERIC_PURCHASE_MESSAGE;
+}
+
+// The store re-sent a purchase it already delivered. Nothing for the user to do.
+export function isDuplicatePurchaseError(error: any): boolean {
+  return String(error?.code ?? "") === "duplicate-purchase";
+}
+
+// True when verification said the store record is an old, ended subscription
+// rather than a new purchase.
+export function isStaleTransactionError(error: any): boolean {
+  return /expired|refunded|revoked/i.test(String(error?.message ?? ""));
+}
+
+// Clears transactions stuck in the App Store's queue (silent, no prompts).
+export async function clearStuckTransactions() {
+  if (Platform.OS !== "ios") return;
+  try {
+    await RNIap.clearTransactionIOS();
+  } catch (error) {
+    console.log("[premium] clearTransaction skipped:", error);
+  }
+}
+
+// Clears stuck transactions and asks the App Store to refresh this device's
+// purchase state. The refresh can show an Apple ID prompt, so it is only used
+// when a purchase attempt needs recovering — never on the normal path.
+export async function refreshStoreState() {
+  if (Platform.OS !== "ios") return;
+  await clearStuckTransactions();
+  try {
+    await RNIap.restorePurchases();
+  } catch (error) {
+    console.log("[premium] store sync skipped:", error);
+  }
+}
+
 export function getPremiumProductId(purchase: any): string | undefined {
   return purchase?.productId || purchase?.sku || purchase?.currentPlanId;
 }

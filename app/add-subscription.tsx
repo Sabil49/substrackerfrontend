@@ -18,10 +18,6 @@ import { filterServices, PopularService } from "@/constants/services";
 import { BillingCycles, Categories, NotificationOptions } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage, subscriptionsApi } from "@/services/api";
-import {
-  checkNotificationPermissions,
-  scheduleLocalNotification,
-} from "@/services/notifications";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -85,7 +81,7 @@ export default function AddSubscriptionScreen() {
         setNotifyDays(subscription.notifyDaysBefore?.length ? subscription.notifyDaysBefore : [7, 3, 1, 0]);
         setNotes(subscription.notes || "");
       } catch (error: any) {
-        Alert.alert("Error", getFriendlyErrorMessage(error, "Could not load this subscription."));
+        Alert.alert("Couldn't Load Subscription", getFriendlyErrorMessage(error, "We couldn't load this subscription. Please try again."));
         router.back();
       } finally {
         setLoadingInitial(false);
@@ -101,36 +97,6 @@ export default function AddSubscriptionScreen() {
     setAmount(String(service.price));
     setCategory(service.category);
     setBillingCycle(service.billingCycle);
-  };
-
-  const scheduleLocalReminders = async (
-    subscription: Awaited<ReturnType<typeof subscriptionsApi.create>>,
-  ) => {
-    const permissionsEnabled = await checkNotificationPermissions();
-    if (!permissionsEnabled) return;
-
-    const nextBillingDate = new Date(subscription.nextBillingDate);
-    if (Number.isNaN(nextBillingDate.getTime())) return;
-
-    const reminderDays = subscription.notifyDaysBefore?.length
-      ? subscription.notifyDaysBefore
-      : notifyDays;
-
-    await Promise.all(
-      reminderDays.map((daysBefore) => {
-        const scheduledDate = new Date(nextBillingDate);
-        scheduledDate.setDate(scheduledDate.getDate() - daysBefore);
-
-        return scheduleLocalNotification(
-          subscription.name,
-          Number(subscription.amount),
-          subscription.currency,
-          daysBefore,
-          scheduledDate,
-          subscription.id,
-        );
-      }),
-    );
   };
 
   // Required-field check. Computed on every render so an error disappears the
@@ -183,12 +149,12 @@ export default function AddSubscriptionScreen() {
           notifyDaysBefore: notifyDays,
           notes: notes.trim() || undefined,
         });
-        Alert.alert("Saved", "Subscription updated successfully");
+        Alert.alert("Subscription Updated", "Your changes have been saved.");
         router.replace(`/subscription/${updated.id}`);
         return;
       }
 
-      const subscription = await subscriptionsApi.create({
+      await subscriptionsApi.create({
         name: name.trim(),
         amount: parsedAmount,
         currency,
@@ -204,13 +170,7 @@ export default function AddSubscriptionScreen() {
         notes: notes.trim() || undefined,
         isActive: true,
       });
-      try {
-        await scheduleLocalReminders(subscription);
-      } catch (notificationError) {
-        console.warn("Failed to schedule local reminders:", notificationError);
-      }
-
-      Alert.alert("Success", "Subscription added successfully");
+      // Reminders are rebuilt from the subscription list when the dashboard loads.
       router.back();
     } catch (error: any) {
       const errorMessage = getFriendlyErrorMessage(
@@ -219,12 +179,12 @@ export default function AddSubscriptionScreen() {
       );
       const isPremiumRequired = error?.code === "functions/resource-exhausted";
       Alert.alert(
-        isPremiumRequired ? "Premium Required" : "Could Not Save",
+        isPremiumRequired ? "Free Plan Limit Reached" : "Couldn't Save",
         errorMessage,
         isPremiumRequired
           ? [
               { text: "Not Now", style: "cancel" },
-              { text: "View Premium", onPress: () => router.push("/premium") },
+              { text: "Upgrade", onPress: () => router.push("/premium") },
             ]
           : undefined,
       );

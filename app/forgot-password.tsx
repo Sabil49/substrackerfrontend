@@ -27,7 +27,7 @@ export default function ForgotPasswordScreen() {
 
   const handleSendReset = async () => {
     if (!email.trim()) {
-      Alert.alert("Validation", "Please enter your email address.");
+      Alert.alert("Email Needed", "Please enter your email address.");
       return;
     }
     setLoading(true);
@@ -37,7 +37,7 @@ export default function ForgotPasswordScreen() {
     } catch (err: any) {
       console.error("[ForgotPassword] error", err);
       Alert.alert(
-        "Could Not Send Reset Email",
+        "Couldn't Send Reset Email",
         getFriendlyErrorMessage(
           err,
           "We could not send a reset email. Please check the address and try again.",

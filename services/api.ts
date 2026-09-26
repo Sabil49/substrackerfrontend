@@ -1,4 +1,5 @@
 // app/services/api.ts
+import { format } from "date-fns";
 import { httpsCallable } from "firebase/functions";
 import { functionsInstance } from "../config/firebase";
 
@@ -109,11 +110,18 @@ export function isUserCancelledError(error: any): boolean {
 const TECHNICAL_PATTERN =
   /\b(null|undefined|NaN|TypeError|ReferenceError|SyntaxError|Firebase|firestore|zod|stack|json|expected|received|internal|invalid[_ ]argument|callable|native|module|exception|http|status|code)\b|\[[^\]]*\]|[{}<>]|\bat \S+ \(/i;
 
+const IDENTIFIER_PATTERN = /_|\b[a-z][a-z0-9-]*(\.[a-z0-9-]+){2,}\b|[a-z]{2,}[A-Z][a-z]+|\w+\(\)/;
+
 function isUserFriendly(message: unknown): message is string {
   if (typeof message !== "string") return false;
   const text = message.trim();
   // A real sentence: raw one-word errors ("Required", "Unauthorized") are not.
-  return text.includes(" ") && text.length <= 180 && !TECHNICAL_PATTERN.test(text);
+  return (
+    text.includes(" ") &&
+    text.length <= 180 &&
+    !TECHNICAL_PATTERN.test(text) &&
+    !IDENTIFIER_PATTERN.test(text)
+  );
 }
 
 export function getFriendlyErrorMessage(
@@ -271,7 +279,13 @@ export const subscriptionsApi = {
   },
 
   create: async (data: CreateSubscriptionPayload): Promise<Subscription> => {
-    const payload = { ...data, billingCycle: data.billingCycle.toUpperCase() };
+    // `today` is the user's own calendar date, so "started today" means today
+    // on their phone, whatever the server's timezone.
+    const payload = {
+      ...data,
+      billingCycle: data.billingCycle.toUpperCase(),
+      today: format(new Date(), "yyyy-MM-dd"),
+    };
     const response = await callFn<{ subscription: Subscription }>("createSubscription", payload);
     return response.subscription;
   },
@@ -280,6 +294,7 @@ export const subscriptionsApi = {
     const payload = {
       ...data,
       id,
+      today: format(new Date(), "yyyy-MM-dd"),
       ...(data.billingCycle ? { billingCycle: data.billingCycle.toUpperCase() } : {}),
     };
     const response = await callFn<{ subscription: Subscription }>("updateSubscription", payload);

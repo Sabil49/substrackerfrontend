@@ -1,8 +1,12 @@
 // app/_layout.tsx
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
-import { testApiConnectivity } from "@/services/api";
-import { configureNotificationHandler, registerForPushNotifications } from "@/services/notifications";
+import { subscriptionsApi, testApiConnectivity } from "@/services/api";
+import {
+  configureNotificationHandler,
+  registerForPushNotifications,
+  syncLocalReminders,
+} from "@/services/notifications";
 import { syncPremiumEntitlement } from "@/services/premium";
 import { hasOptedOutOfNotifications } from "@/utils/storage";
 import { Stack, useRouter, useSegments } from "expo-router";
@@ -59,6 +63,9 @@ function RootLayoutContent() {
         // Respect a user who turned notifications off in Account.
         if (!(await hasOptedOutOfNotifications())) {
           await registerForPushNotifications();
+          // Permission has just been answered: schedule renewal reminders now
+          // rather than waiting for the next time the list is refreshed.
+          await syncLocalReminders(await subscriptionsApi.getAll());
         }
       } catch (error) {
         console.log("Push notification init error:", error);

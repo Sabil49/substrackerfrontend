@@ -2,12 +2,13 @@
 // Merged Profile + Settings into one Account screen, matching Account.png.
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { getFriendlyErrorMessage, User, userApi } from "@/services/api";
+import { getFriendlyErrorMessage, subscriptionsApi, User, userApi } from "@/services/api";
 import {
   cancelAllScheduledNotifications,
   checkNotificationPermissions,
   registerForPushNotifications,
   removePushTokenFromServer,
+  syncLocalReminders,
 } from "@/services/notifications";
 import { restorePremiumFromStore } from "@/services/premium";
 import { setNotificationsOptOut } from "@/utils/storage";
@@ -99,6 +100,8 @@ export default function AccountScreen() {
               "We couldn't set up reminders for this device. Please try again in a moment.",
             );
           }
+        } else {
+          subscriptionsApi.getAll().then(syncLocalReminders).catch(() => {});
         }
       } else {
         await setNotificationsOptOut(true);
@@ -143,6 +146,7 @@ export default function AccountScreen() {
     if (deviceToken) {
       await removePushTokenFromServer(deviceToken).catch(() => {});
     }
+    await cancelAllScheduledNotifications().catch(() => {});
     // No manual navigation here: the root layout sends signed-out users to
     // /login. Navigating too made the login screen open twice.
     await firebaseSignOut();
@@ -166,14 +170,15 @@ export default function AccountScreen() {
               if (deviceToken) {
                 await removePushTokenFromServer(deviceToken).catch(() => {});
               }
+              await cancelAllScheduledNotifications().catch(() => {});
               await firebaseSignOut();
               setUser(null);
               Alert.alert("Account Deleted", "Your Substracker account was deleted.");
             } catch (error) {
               console.error("Failed to delete account:", error);
               Alert.alert(
-                "Could Not Delete Account",
-                getFriendlyErrorMessage(error, "We could not delete your account. Please try again."),
+                "Couldn't Delete Account",
+                getFriendlyErrorMessage(error, "We couldn't delete your account. Please try again."),
               );
             } finally {
               setIsDeletingAccount(false);

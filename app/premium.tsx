@@ -4,8 +4,14 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage, isUserCancelledError, userApi } from "@/services/api";
 import {
   acquireIapConnection,
+  clearStuckTransactions,
   getPremiumProductId,
+  getPurchaseErrorMessage,
+  isDuplicatePurchaseError,
+  isStaleTransactionError,
+  NoPremiumFoundError,
   PREMIUM_PRODUCT_IDS,
+  refreshStoreState,
   releaseIapConnection,
   restorePremiumFromStore,
   verifyPremiumPurchase,
@@ -28,34 +34,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const SUBSCRIPTION_SKUS = [...PREMIUM_PRODUCT_IDS];
 
+// Only things that genuinely need Premium (everything else is free).
 const FEATURES = [
   {
-    title: "Unlimited Subscriptions",
-    description: "Track every recurring charge without the free-plan limit",
+    title: "Unlimited subscriptions",
+    description: "The free plan tracks up to 5 — Premium has no limit",
   },
   {
-    title: "Smart Renewal Reminders",
-    description: "Get alerts 7 days, 3 days, 1 day, and on renewal day",
+    title: "Spending statistics",
+    description: "Monthly and yearly totals, categories, and upcoming charges",
   },
   {
-    title: "Trial Ending Alerts",
-    description: "Protect free trials before they quietly become paid",
-  },
-  {
-    title: "Renewal Calendar",
-    description: "See what is charging next and plan your month",
-  },
-  {
-    title: "Receipt Import",
-    description: "Find subscriptions from screenshots or receipts without bank linking",
-  },
-  {
-    title: "Savings Tracker",
-    description: "Spot subscriptions to cancel and track money saved",
-  },
-  {
-    title: "Cancellation Help",
-    description: "Open the right store page and mark cancellations cleanly",
+    title: "Receipt scanner",
+    description: "Add a subscription from a screenshot or photo of a receipt",
   },
 ];
 
@@ -107,6 +98,24 @@ const finishPurchase = async (purchase: any) => {
   }
 };
 
+type PurchaseAttempt = {
+  succeeded: boolean;
+  cancelled: boolean;
+  sawStale: boolean;
+  alreadyOwned: boolean;
+  failure: string | null;
+};
+
+const freshAttempt = (): PurchaseAttempt => ({
+  succeeded: false,
+  cancelled: false,
+  sawStale: false,
+  alreadyOwned: false,
+  failure: null,
+});
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export default function PremiumScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -116,12 +125,15 @@ export default function PremiumScreen() {
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [storeProducts, setStoreProducts] = useState<any[]>([]);
   const [isPremium, setIsPremium] = useState(false);
-  // True only between tapping "Get Premium" and the store's answer, so old
-  // transactions the store re-delivers in the background never pop up alerts.
-  const purchaseInFlight = useRef(false);
-  // The store can report one failure through both the purchase promise and the
-  // error listener; only the first alert in a short window is shown.
+
+  // What happened to the purchase the user just started. Refs, so the store's
+  // listeners and the purchase routine always see the same live values.
+  const attempt = useRef<PurchaseAttempt>(freshAttempt());
+  const isPremiumRef = useRef(false);
+  const celebrated = useRef(false);
   const lastAlertAt = useRef(0);
+
+  // The store can report one failure more than one way; show only the first alert.
   const alertOnce = useCallback(
     (title: string, message: string, buttons?: Parameters<typeof Alert.alert>[2]) => {
       if (Date.now() - lastAlertAt.current < 2000) return;
@@ -131,37 +143,51 @@ export default function PremiumScreen() {
     [],
   );
 
+  const markPremium = useCallback((value: boolean) => {
+    isPremiumRef.current = value;
+    setIsPremium(value);
+  }, []);
+
+  const celebrate = useCallback(
+    (title: string, message: string) => {
+      if (celebrated.current) return;
+      celebrated.current = true;
+      markPremium(true);
+      Alert.alert(title, message, [
+        { text: "OK", onPress: () => router.replace("/(tabs)/account") },
+      ]);
+    },
+    [markPremium, router],
+  );
+
   const handleRestore = useCallback(async () => {
     setRestoreLoading(true);
 
     try {
       await restorePremiumFromStore({ syncWithStore: true });
-      setIsPremium(true);
-
-      Alert.alert("Premium Restored", "Your Premium subscription is active again.", [
-        { text: "OK", onPress: () => router.replace("/(tabs)/account") },
-      ]);
+      celebrate("Premium Restored", "Your Premium subscription is active again.");
     } catch (error) {
       console.error("Error restoring purchase", error);
-      Alert.alert(
+      alertOnce(
         "Couldn't Restore Purchase",
         getFriendlyErrorMessage(error, "We couldn't restore your purchase. Please try again later."),
       );
     } finally {
       setRestoreLoading(false);
     }
-  }, [router]);
+  }, [alertOnce, celebrate]);
+
   useFocusEffect(
     useCallback(() => {
       let active = true;
       userApi
         .get()
-        .then((user) => active && setIsPremium(user.isPro))
+        .then((user) => active && markPremium(user.isPro))
         .catch(() => {});
       return () => {
         active = false;
       };
-    }, []),
+    }, [markPremium]),
   );
 
   useEffect(() => {
@@ -191,68 +217,46 @@ export default function PremiumScreen() {
 
     initIAP();
 
+    // A purchase arrived from the store — check it with our server.
     const purchaseUpdateSub = RNIap.purchaseUpdatedListener(async (purchase) => {
       // Ignore anything that isn't one of our Premium plans.
       const productId = getPremiumProductId(purchase);
       if (!productId || !SUBSCRIPTION_SKUS.some((sku) => sku === productId)) return;
 
-      const wasUserInitiated = purchaseInFlight.current;
-
       try {
         await verifyPremiumPurchase(purchase);
         await finishPurchase(purchase);
-        purchaseInFlight.current = false;
-        setLoading(false);
-        setIsPremium(true);
-
-        Alert.alert("Welcome to Premium", "Your subscription is active. Enjoy!", [
-          { text: "OK", onPress: () => router.replace("/(tabs)/account") },
-        ]);
+        attempt.current.succeeded = true;
+        celebrate("Welcome to Premium", "Your subscription is active. Enjoy!");
       } catch (e: any) {
         console.warn("Purchase verification failed:", e?.code, e?.message);
-        purchaseInFlight.current = false;
-        setLoading(false);
-
-        // An expired/revoked transaction can never succeed — clear it from the
-        // store's queue so it isn't re-delivered on every visit.
-        if (/expired|refunded|revoked/i.test(String(e?.message))) {
+        if (isStaleTransactionError(e)) {
+          // An old, ended subscription the store re-sent — not the user's new
+          // purchase. Clear it and carry on; nothing to tell the user.
+          attempt.current.sawStale = true;
           await finishPurchase(purchase);
+          return;
         }
-
-        // Only tell the user about failures of a purchase they just started.
-        if (wasUserInitiated) {
-          alertOnce(
-            "Couldn't Confirm Purchase",
-            getFriendlyErrorMessage(e, "We couldn't confirm your purchase. Please try again."),
-          );
-        }
+        // Leave the transaction unfinished so it is retried next time.
+        attempt.current.failure = getFriendlyErrorMessage(
+          e,
+          "We couldn't confirm your purchase. Please try again.",
+        );
       }
     });
 
     const purchaseErrorSub = RNIap.purchaseErrorListener((error) => {
-      console.warn("IAP purchase error", error);
-      purchaseInFlight.current = false;
-      setLoading(false);
+      console.warn("IAP purchase error", error?.code);
 
-      // Closing the payment sheet isn't an error.
-      if (isUserCancelledError(error)) return;
-
-      if (isAlreadyOwnedError(error)) {
-        alertOnce(
-          "You're Already Subscribed",
-          "This Apple ID already has Premium. Restore your purchase to unlock it here.",
-          [
-            { text: "Not Now", style: "cancel" },
-            { text: "Restore", onPress: handleRestore },
-          ],
-        );
-        return;
+      if (isUserCancelledError(error)) {
+        attempt.current.cancelled = true; // closing the payment sheet isn't an error
+      } else if (isDuplicatePurchaseError(error)) {
+        attempt.current.sawStale = true; // same record delivered twice
+      } else if (isAlreadyOwnedError(error)) {
+        attempt.current.alreadyOwned = true;
+      } else {
+        attempt.current.failure = getPurchaseErrorMessage(error);
       }
-
-      alertOnce(
-        "Purchase Not Completed",
-        getFriendlyErrorMessage(error, "We couldn't complete the purchase. Please try again."),
-      );
     });
 
     return () => {
@@ -261,70 +265,144 @@ export default function PremiumScreen() {
       purchaseErrorSub.remove();
       if (acquired) releaseIapConnection();
     };
-  }, [router, handleRestore, alertOnce]);
+  }, [celebrate]);
+
+  // Waits for the store's listeners to report how the purchase ended.
+  const waitForOutcome = async (timeoutMs: number) => {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const a = attempt.current;
+      if (a.succeeded || a.cancelled || a.failure || a.alreadyOwned) return;
+      // Only an old record came back: don't wait long for a real one.
+      if (a.sawStale && Date.now() - started > 1500) return;
+      await sleep(250);
+    }
+  };
+
+  const startPurchase = async (plan: (typeof PRODUCTS)[number], storeProduct: any) => {
+    attempt.current = freshAttempt();
+
+    await (RNIap as any).requestPurchase({
+      request: {
+        apple: {
+          sku: plan.productId,
+        },
+        google: {
+          skus: [plan.productId],
+          subscriptionOffers:
+            storeProduct.subscriptionOfferDetailsAndroid?.map((offer: any) => ({
+              sku: plan.productId,
+              offerToken: offer.offerToken,
+            })) || [],
+        },
+      },
+      type: "subs",
+    });
+
+    await waitForOutcome(20000);
+  };
 
   const handleUpgrade = async () => {
+    if (loading) return;
     setLoading(true);
+    celebrated.current = false;
 
     try {
       const plan = PRODUCTS.find((p) => p.id === selectedPlan);
-
-      if (!plan) {
-        throw new Error("That plan isn't available right now.");
-      }
+      if (!plan) throw new Error("That plan isn't available right now.");
 
       await acquireIapConnection();
       try {
         let products = storeProducts;
-
         if (!products.length) {
           products = await (RNIap as any).fetchProducts({
             skus: SUBSCRIPTION_SKUS,
             type: "subs",
           });
-
           setStoreProducts(products || []);
         }
 
         const storeProduct = products.find(
           (item: any) => getStoreProductId(item) === plan.productId,
         );
-
         if (!storeProduct) {
           throw new Error(
             "Premium plans couldn't be loaded from the App Store. Please try again in a few minutes.",
           );
         }
 
-        purchaseInFlight.current = true;
+        // 1. Already subscribed (earlier, or on another device)? Then unlock it
+        //    instead of asking the user to pay twice.
+        try {
+          await restorePremiumFromStore();
+          celebrate("Premium Is Active", "Your subscription is already active on this account.");
+          return;
+        } catch (error: any) {
+          if (error?.code === "functions/already-exists") {
+            alertOnce("Subscription Linked to Another Account", getFriendlyErrorMessage(error));
+            return;
+          }
+          // Not subscribed yet (or the check failed) — go on to the purchase.
+        }
 
-        await (RNIap as any).requestPurchase({
-          request: {
-            apple: {
-              sku: plan.productId,
-            },
-            google: {
-              skus: [plan.productId],
-              subscriptionOffers:
-                storeProduct.subscriptionOfferDetailsAndroid?.map((offer: any) => ({
-                  sku: plan.productId,
-                  offerToken: offer.offerToken,
-                })) || [],
-            },
-          },
-          type: "subs",
-        });
+        // 2. Buy. First clear anything stuck in the store's queue.
+        await clearStuckTransactions();
+        await startPurchase(plan, storeProduct);
+
+        // The store handed back an old, ended subscription instead of a payment
+        // sheet. Refresh its state and try once more.
+        let a = attempt.current;
+        if (!a.succeeded && !a.cancelled && !a.failure && a.sawStale) {
+          await refreshStoreState();
+          await startPurchase(plan, storeProduct);
+          a = attempt.current;
+        }
+
+        if (a.succeeded || a.cancelled) return;
+
+        // 3. Last check: maybe the purchase did go through and only the
+        //    confirmation was missed.
+        try {
+          await restorePremiumFromStore();
+          celebrate("Welcome to Premium", "Your subscription is active. Enjoy!");
+          return;
+        } catch {
+          // fall through to the message below
+        }
+
+        if (a.failure) {
+          alertOnce("Purchase Not Completed", a.failure);
+        } else if (a.alreadyOwned) {
+          alertOnce(
+            "You're Already Subscribed",
+            "This Apple ID already has Premium. Tap Restore Purchase to unlock it here.",
+            [
+              { text: "Not Now", style: "cancel" },
+              { text: "Restore", onPress: handleRestore },
+            ],
+          );
+        } else if (a.sawStale) {
+          alertOnce(
+            "Couldn't Start Your Subscription",
+            "Your Apple account still shows a previous subscription that has ended, so a new payment couldn't start. Please wait a minute and try again, or tap Restore Purchase.",
+          );
+        } else {
+          alertOnce(
+            "Purchase Not Completed",
+            "We couldn't complete your purchase. If you were charged, tap Restore Purchase to unlock Premium.",
+          );
+        }
       } finally {
         await releaseIapConnection();
       }
-    } catch (error) {
-      console.error("handleUpgrade error:", error);
-      purchaseInFlight.current = false;
-
+    } catch (error: any) {
+      console.error("handleUpgrade error:", error?.code, error?.message);
       if (!isUserCancelledError(error)) {
         alertOnce(
           "Couldn't Start Purchase",
-          getFriendlyErrorMessage(error, "We couldn't start the purchase. Please try again."),
+          error instanceof NoPremiumFoundError || !error?.code
+            ? getFriendlyErrorMessage(error, "We couldn't start the purchase. Please try again.")
+            : getPurchaseErrorMessage(error),
         );
       }
     } finally {
@@ -476,9 +554,14 @@ export default function PremiumScreen() {
               <View style={[styles.featureCheck, { backgroundColor: colors.badge.worthItBg }]}>
                 <Ionicons name="checkmark" size={13} color={colors.accent.primary} />
               </View>
-              <Text style={[styles.featureTitle, { color: colors.text.primary }]}>
-                {feature.title}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.featureTitle, { color: colors.text.primary }]}>
+                  {feature.title}
+                </Text>
+                <Text style={[styles.featureDescription, { color: colors.text.secondary }]}>
+                  {feature.description}
+                </Text>
+              </View>
             </View>
           ))}
         </View>
@@ -654,6 +737,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   featureTitle: { fontSize: 15, fontWeight: "700" },
+  featureDescription: { fontSize: 13, fontWeight: "500", marginTop: 2, lineHeight: 18 },
   upgradeButton: { marginTop: 8, marginBottom: 16 },
   restoreLink: { alignItems: "center", paddingVertical: 6, marginBottom: 24 },
   restoreLinkText: { fontSize: 14, fontWeight: "700" },

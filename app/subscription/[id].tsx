@@ -4,7 +4,6 @@ import ServiceIcon from "@/components/ServiceIcon";
 import { findServiceByName } from "@/constants/services";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Subscription, subscriptionsApi } from "@/services/api";
-import { cancelLocalNotificationsForSubscription } from "@/services/notifications";
 import { formatCurrency, formatDate, getDaysUntil } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -48,7 +47,7 @@ export default function SubscriptionDetailScreen() {
       const data = await subscriptionsApi.getOne(id);
       setSubscription(data);
     } catch {
-      Alert.alert("Error", "Failed to load subscription");
+      Alert.alert("Couldn't Load Subscription", "Please check your connection and try again.");
       router.back();
     } finally {
       setLoading(false);
@@ -74,9 +73,9 @@ export default function SubscriptionDetailScreen() {
     try {
       const updated = await subscriptionsApi.markReviewed(id);
       setSubscription(updated);
-      Alert.alert("✓ Reviewed", "Subscription marked as reviewed");
+      Alert.alert("Marked as Reviewed", "Nice — we'll remind you to review it again later.");
     } catch {
-      Alert.alert("Error", "Failed to mark as reviewed");
+      Alert.alert("Couldn't Save", "We couldn't mark this as reviewed. Please try again.");
     }
   };
   const handleLogUsage = async () => {
@@ -84,9 +83,9 @@ export default function SubscriptionDetailScreen() {
     try {
       const updated = await subscriptionsApi.logUsage(id!);
       setSubscription(updated);
-      Alert.alert("✓ Logged", "Usage recorded successfully");
+      Alert.alert("Usage Recorded", "Thanks! This helps show whether it's worth the price.");
     } catch {
-      Alert.alert("Error", "Failed to log usage");
+      Alert.alert("Couldn't Save", "We couldn't record your usage. Please try again.");
     }
   };
 
@@ -100,10 +99,10 @@ export default function SubscriptionDetailScreen() {
         await Linking.openURL(storeUrl);
         setCancelModalVisible(true);
       } else {
-        Alert.alert("Error", "Cannot open store page");
+        Alert.alert("Can't Open Page", "We couldn't open the store page on this device.");
       }
     } catch {
-      Alert.alert("Error", "Failed to open store page");
+      Alert.alert("Can't Open Page", "We couldn't open the store page. Please try again.");
     }
   };
 
@@ -111,12 +110,11 @@ export default function SubscriptionDetailScreen() {
     if (!subscription) return;
     try {
       const updated = await subscriptionsApi.cancel(id!, cancelReason);
-      await cancelLocalNotificationsForSubscription(id!, subscription.name);
       setSubscription(updated);
       setCancelModalVisible(false);
-      Alert.alert("✓ Canceled", "Subscription marked as canceled");
+      Alert.alert("Marked as Canceled", "Remember to also cancel it with the store so you aren't charged.");
     } catch {
-      Alert.alert("Error", "Failed to cancel subscription");
+      Alert.alert("Couldn't Cancel", "We couldn't mark this subscription as canceled. Please try again.");
     }
   };
 
@@ -132,13 +130,9 @@ export default function SubscriptionDetailScreen() {
           onPress: async () => {
             try {
               await subscriptionsApi.delete(id!);
-              await cancelLocalNotificationsForSubscription(
-                id!,
-                subscription?.name,
-              );
               router.back();
             } catch {
-              Alert.alert("Error", "Failed to delete subscription");
+              Alert.alert("Couldn't Delete", "We couldn't delete this subscription. Please try again.");
             }
           },
         },

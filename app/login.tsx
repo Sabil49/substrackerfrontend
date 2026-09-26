@@ -32,7 +32,7 @@ export default function LoginScreen() {
 
   const handleEmailLogin = async () => {
     if (!email.trim() || !password) {
-      Alert.alert("Validation", "Please enter both email and password.");
+      Alert.alert("Missing Details", "Please enter both your email and password.");
       return;
     }
     setLoading("email");
@@ -41,7 +41,7 @@ export default function LoginScreen() {
     } catch (err: any) {
       console.error("[Login] error", err);
       Alert.alert(
-        "Login Failed",
+        "Couldn't Sign In",
         getFriendlyErrorMessage(
           err,
           "Unable to sign in. Please verify your email and password.",
@@ -59,7 +59,7 @@ export default function LoginScreen() {
     } catch (err: any) {
       if (isUserCancelledError(err)) return;
       console.error("[Login] Google error", err);
-      Alert.alert("Google Sign-In Failed", getFriendlyErrorMessage(err));
+      Alert.alert("Couldn't Sign In with Google", getFriendlyErrorMessage(err));
     } finally {
       setLoading(null);
     }
@@ -72,7 +72,7 @@ export default function LoginScreen() {
     } catch (err: any) {
       if (!isUserCancelledError(err)) {
         console.error("[Login] Apple error", err);
-        Alert.alert("Apple Sign-In Failed", getFriendlyErrorMessage(err));
+        Alert.alert("Couldn't Sign In with Apple", getFriendlyErrorMessage(err));
       }
     } finally {
       setLoading(null);

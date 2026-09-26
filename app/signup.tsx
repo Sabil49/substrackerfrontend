@@ -33,15 +33,15 @@ export default function SignupScreen() {
 
   const handleEmailSignup = async () => {
     if (!name.trim()) {
-      Alert.alert("Validation", "Please enter your name.");
+      Alert.alert("Name Needed", "Please enter your name.");
       return;
     }
     if (!email.trim() || !password) {
-      Alert.alert("Validation", "Please enter both email and password.");
+      Alert.alert("Missing Details", "Please enter both your email and password.");
       return;
     }
     if (password.length < 8) {
-      Alert.alert("Validation", "Password must be at least 8 characters.");
+      Alert.alert("Password Too Short", "Please choose a password with at least 8 characters.");
       return;
     }
     setLoading("email");
@@ -50,7 +50,7 @@ export default function SignupScreen() {
     } catch (err: any) {
       console.error("[Signup] error", err);
       Alert.alert(
-        "Signup Failed",
+        "Couldn't Create Account",
         getFriendlyErrorMessage(
           err,
           "Unable to create account. Please try again.",
@@ -68,7 +68,7 @@ export default function SignupScreen() {
     } catch (err: any) {
       if (isUserCancelledError(err)) return;
       console.error("[Signup] Google error", err);
-      Alert.alert("Google Sign-In Failed", getFriendlyErrorMessage(err));
+      Alert.alert("Couldn't Sign In with Google", getFriendlyErrorMessage(err));
     } finally {
       setLoading(null);
     }
@@ -81,7 +81,7 @@ export default function SignupScreen() {
     } catch (err: any) {
       if (!isUserCancelledError(err)) {
         console.error("[Signup] Apple error", err);
-        Alert.alert("Apple Sign-In Failed", getFriendlyErrorMessage(err));
+        Alert.alert("Couldn't Sign In with Apple", getFriendlyErrorMessage(err));
       }
     } finally {
       setLoading(null);
