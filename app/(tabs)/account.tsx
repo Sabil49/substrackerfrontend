@@ -8,10 +8,11 @@ import {
   checkNotificationPermissions,
   registerForPushNotifications,
   removePushTokenFromServer,
+  requestNotificationPermission,
   syncLocalReminders,
 } from "@/services/notifications";
 import { restorePremiumFromStore } from "@/services/premium";
-import { setNotificationsOptOut } from "@/utils/storage";
+import { hasOptedOutOfNotifications, setNotificationsOptOut } from "@/utils/storage";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
@@ -40,14 +41,15 @@ export default function AccountScreen() {
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
 
-  // "On" means the device allows notifications AND this device is registered
-  // for reminders. Reading both keeps the switch truthful after a relaunch.
+  // "On" means the device allows notifications AND the user hasn't switched
+  // reminders off in the app. Reminders are scheduled on the device itself, so
+  // this doesn't depend on any push-notification registration succeeding.
   const refreshNotificationState = async () => {
-    const [granted, token] = await Promise.all([
+    const [granted, optedOut] = await Promise.all([
       checkNotificationPermissions(),
-      AsyncStorage.getItem("deviceToken"),
+      hasOptedOutOfNotifications(),
     ]);
-    setNotificationsEnabled(granted && Boolean(token));
+    setNotificationsEnabled(granted && !optedOut);
   };
 
   const loadUser = async () => {
@@ -81,33 +83,29 @@ export default function AccountScreen() {
     try {
       if (value) {
         await setNotificationsOptOut(false);
-        const token = await registerForPushNotifications();
-        if (!token) {
+        const allowed = await requestNotificationPermission();
+        if (!allowed) {
           setNotificationsEnabled(false);
-          const allowed = await checkNotificationPermissions();
-          if (!allowed) {
-            Alert.alert(
-              "Notifications Are Off",
-              "Allow notifications for Substracker in your device settings to get renewal reminders.",
-              [
-                { text: "Not Now", style: "cancel" },
-                { text: "Open Settings", onPress: () => Linking.openSettings() },
-              ],
-            );
-          } else {
-            Alert.alert(
-              "Couldn't Turn On Notifications",
-              "We couldn't set up reminders for this device. Please try again in a moment.",
-            );
-          }
+          Alert.alert(
+            "Notifications Are Off",
+            "Allow notifications for Substracker in your device settings to get renewal reminders.",
+            [
+              { text: "Not Now", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() },
+            ],
+          );
         } else {
-          subscriptionsApi.getAll().then(syncLocalReminders).catch(() => {});
+          // Reminders are scheduled on this device; registering for push is a
+          // bonus that must never block turning them on.
+          registerForPushNotifications().catch(() => {});
+          const subscriptions = await subscriptionsApi.getAll().catch(() => []);
+          await syncLocalReminders(subscriptions);
         }
       } else {
         await setNotificationsOptOut(true);
-        const token = await AsyncStorage.getItem("deviceToken");
-        if (token) await removePushTokenFromServer(token);
         await cancelAllScheduledNotifications().catch(() => {});
+        const token = await AsyncStorage.getItem("deviceToken");
+        if (token) await removePushTokenFromServer(token).catch(() => {});
       }
     } catch (error) {
       console.error("Notification toggle failed:", error);

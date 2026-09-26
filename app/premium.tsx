@@ -99,6 +99,7 @@ const finishPurchase = async (purchase: any) => {
 };
 
 type PurchaseAttempt = {
+  eventSeen: boolean;
   succeeded: boolean;
   cancelled: boolean;
   sawStale: boolean;
@@ -107,6 +108,7 @@ type PurchaseAttempt = {
 };
 
 const freshAttempt = (): PurchaseAttempt => ({
+  eventSeen: false,
   succeeded: false,
   cancelled: false,
   sawStale: false,
@@ -148,16 +150,21 @@ export default function PremiumScreen() {
     setIsPremium(value);
   }, []);
 
+  // Read through a ref so the store listeners below are registered once and
+  // never torn down mid-purchase just because the router object changed.
+  const routerRef = useRef(router);
+  routerRef.current = router;
+
   const celebrate = useCallback(
     (title: string, message: string) => {
       if (celebrated.current) return;
       celebrated.current = true;
       markPremium(true);
       Alert.alert(title, message, [
-        { text: "OK", onPress: () => router.replace("/(tabs)/account") },
+        { text: "OK", onPress: () => routerRef.current.replace("/(tabs)/account") },
       ]);
     },
-    [markPremium, router],
+    [markPremium],
   );
 
   const handleRestore = useCallback(async () => {
@@ -223,6 +230,7 @@ export default function PremiumScreen() {
       const productId = getPremiumProductId(purchase);
       if (!productId || !SUBSCRIPTION_SKUS.some((sku) => sku === productId)) return;
 
+      attempt.current.eventSeen = true;
       try {
         await verifyPremiumPurchase(purchase);
         await finishPurchase(purchase);
@@ -247,6 +255,7 @@ export default function PremiumScreen() {
 
     const purchaseErrorSub = RNIap.purchaseErrorListener((error) => {
       console.warn("IAP purchase error", error?.code);
+      attempt.current.eventSeen = true;
 
       if (isUserCancelledError(error)) {
         attempt.current.cancelled = true; // closing the payment sheet isn't an error
@@ -275,6 +284,8 @@ export default function PremiumScreen() {
       if (a.succeeded || a.cancelled || a.failure || a.alreadyOwned) return;
       // Only an old record came back: don't wait long for a real one.
       if (a.sawStale && Date.now() - started > 1500) return;
+      // The store reported nothing at all (e.g. the payment sheet was dismissed).
+      if (!a.eventSeen && Date.now() - started > 5000) return;
       await sleep(250);
     }
   };
@@ -369,6 +380,9 @@ export default function PremiumScreen() {
         } catch {
           // fall through to the message below
         }
+
+        // The store reported nothing — the payment sheet was simply closed.
+        if (!a.eventSeen) return;
 
         if (a.failure) {
           alertOnce("Purchase Not Completed", a.failure);

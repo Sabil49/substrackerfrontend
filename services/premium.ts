@@ -193,6 +193,30 @@ export function verifyPremiumPurchase(purchase: any) {
   return postStorePurchase(purchase, "verify");
 }
 
+// The store's "active subscriptions" records don't always carry the receipt
+// token our server needs. When one is missing, take it from the matching
+// purchase in the store's purchase list instead.
+async function withStoreTokens(subscriptions: any[]) {
+  if (subscriptions.every((subscription) => getStoreToken(subscription))) return subscriptions;
+
+  let available: any[] = [];
+  try {
+    available = (await RNIap.getAvailablePurchases({ onlyIncludeActiveItemsIOS: true })) as any[];
+  } catch (error) {
+    console.log("[premium] available purchases lookup skipped:", error);
+  }
+
+  return subscriptions.map(
+    (subscription) =>
+      (getStoreToken(subscription) ? subscription : undefined) ??
+      available.find(
+        (purchase) =>
+          getPremiumProductId(purchase) === getPremiumProductId(subscription) && getStoreToken(purchase),
+      ) ??
+      subscription,
+  );
+}
+
 export async function getActivePremiumSubscriptions() {
   const activeSubscriptions = await RNIap.getActiveSubscriptions([
     ...PREMIUM_PRODUCT_IDS,
@@ -229,8 +253,9 @@ export async function restorePremiumFromStore({
       }
     }
 
-    const subscriptions = await getActivePremiumSubscriptions();
-    if (!subscriptions.length) throw new NoPremiumFoundError();
+    const active = await getActivePremiumSubscriptions();
+    if (!active.length) throw new NoPremiumFoundError();
+    const subscriptions = await withStoreTokens(active);
 
     let lastError: unknown;
     for (const subscription of subscriptions) {

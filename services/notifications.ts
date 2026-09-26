@@ -89,6 +89,14 @@ export async function checkNotificationPermissions() {
   return status === "granted";
 }
 
+// Asks for notification permission if it hasn't been decided yet.
+export async function requestNotificationPermission() {
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  if (existing === "granted") return true;
+  const { status } = await Notifications.requestPermissionsAsync();
+  return status === "granted";
+}
+
 export async function cancelAllScheduledNotifications() {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
