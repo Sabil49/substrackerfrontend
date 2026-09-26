@@ -4,14 +4,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage, User, userApi } from "@/services/api";
 import {
+  cancelAllScheduledNotifications,
   checkNotificationPermissions,
   registerForPushNotifications,
   removePushTokenFromServer,
-  sendPushTokenToServer,
-  cancelAllScheduledNotifications,
-  getScheduledNotifications,
 } from "@/services/notifications";
 import { restorePremiumFromStore } from "@/services/premium";
+import { setNotificationsOptOut } from "@/utils/storage";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
@@ -36,18 +35,32 @@ export default function AccountScreen() {
   const { firebaseUser, signOut: firebaseSignOut } = useAuth();
   const [user, setUser] = useState<User | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationsBusy, setNotificationsBusy] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+
+  // "On" means the device allows notifications AND this device is registered
+  // for reminders. Reading both keeps the switch truthful after a relaunch.
+  const refreshNotificationState = async () => {
+    const [granted, token] = await Promise.all([
+      checkNotificationPermissions(),
+      AsyncStorage.getItem("deviceToken"),
+    ]);
+    setNotificationsEnabled(granted && Boolean(token));
+  };
 
   const loadUser = async () => {
     try {
       const data = await userApi.get();
       setUser(data);
-      const hasPermission = await checkNotificationPermissions();
-      setNotificationsEnabled(hasPermission);
     } catch {
       console.log("Could not load user profile");
       setUser(null);
+    }
+    try {
+      await refreshNotificationState();
+    } catch {
+      // leave the switch as it is
     }
   };
 
@@ -59,82 +72,51 @@ export default function AccountScreen() {
   );
 
   const handleNotificationToggle = async (value: boolean) => {
-    if (value) {
-      try {
-        const token = await registerForPushNotifications();
-        if (token) {
-          try {
-            await sendPushTokenToServer(token);
-            setNotificationsEnabled(true);
-          } catch (error) {
-            console.error("Failed to send token to server:", error);
-            Alert.alert("Server Error", "Could not register device for notifications. Please try again.");
-            setNotificationsEnabled(false);
-          }
-        } else {
-          Alert.alert("Notifications Disabled", "Please enable notifications in your device settings");
-        }
-      } catch (error) {
-        console.error("Error during push notification registration:", error);
-        Alert.alert("Registration Error", "Failed to register for notifications. Please try again.");
-        setNotificationsEnabled(false);
-      }
-    } else {
-      try {
-        const token = await AsyncStorage.getItem("deviceToken");
-        if (token) {
-          try {
-            await removePushTokenFromServer(token);
-          } catch (error) {
-            console.error("Failed to remove token from server:", error);
-            Alert.alert("Server Error", "Could not disable notifications on server. Please try again.");
-            setNotificationsEnabled(true);
-            return;
-          }
-        }
-        setNotificationsEnabled(false);
-      } catch (error) {
-        console.error("Error during notification removal:", error);
-        Alert.alert("Removal Error", "Failed to disable notifications. Please try again.");
-      }
-    }
-  };
+    if (notificationsBusy) return;
+    setNotificationsBusy(true);
+    // Flip immediately so the switch feels instant; undone below on failure.
+    setNotificationsEnabled(value);
 
-  const handleTestNotification = async () => {
     try {
-      const [scheduled, permissionsEnabled] = await Promise.all([
-        getScheduledNotifications(),
-        checkNotificationPermissions(),
-      ]);
+      if (value) {
+        await setNotificationsOptOut(false);
+        const token = await registerForPushNotifications();
+        if (!token) {
+          setNotificationsEnabled(false);
+          const allowed = await checkNotificationPermissions();
+          if (!allowed) {
+            Alert.alert(
+              "Notifications Are Off",
+              "Allow notifications for Substracker in your device settings to get renewal reminders.",
+              [
+                { text: "Not Now", style: "cancel" },
+                { text: "Open Settings", onPress: () => Linking.openSettings() },
+              ],
+            );
+          } else {
+            Alert.alert(
+              "Couldn't Turn On Notifications",
+              "We couldn't set up reminders for this device. Please try again in a moment.",
+            );
+          }
+        }
+      } else {
+        await setNotificationsOptOut(true);
+        const token = await AsyncStorage.getItem("deviceToken");
+        if (token) await removePushTokenFromServer(token);
+        await cancelAllScheduledNotifications().catch(() => {});
+      }
+    } catch (error) {
+      console.error("Notification toggle failed:", error);
+      setNotificationsEnabled(!value);
+      await setNotificationsOptOut(!value).catch(() => {});
       Alert.alert(
-        "Notification Status",
-        `Device notifications are ${permissionsEnabled ? "enabled" : "disabled"}.\n\nLocal scheduled reminders on this device: ${scheduled.length}.`,
+        "Couldn't Update Notifications",
+        getFriendlyErrorMessage(error, "We couldn't change your notification setting. Please try again."),
       );
-    } catch {
-      Alert.alert("Error", "Failed to check notifications");
+    } finally {
+      setNotificationsBusy(false);
     }
-  };
-
-  const handleClearNotifications = () => {
-    Alert.alert(
-      "Clear Local Notifications",
-      "This will cancel local scheduled notifications on this device. Server push reminders are not affected.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await cancelAllScheduledNotifications();
-              Alert.alert("Success", "All notifications cleared");
-            } catch {
-              Alert.alert("Error", "Failed to clear notifications");
-            }
-          },
-        },
-      ],
-    );
   };
 
   const handleOpenSystemSettings = () => Linking.openSettings();
@@ -142,13 +124,14 @@ export default function AccountScreen() {
   const handleRestorePurchase = async () => {
     setIsRestoring(true);
     try {
-      await restorePremiumFromStore();
+      await restorePremiumFromStore({ syncWithStore: true });
       await loadUser();
-      Alert.alert("Success", "Premium restored successfully!");
+      Alert.alert("Premium Restored", "Your Premium subscription is active again.");
     } catch (error) {
+      console.error("Restore purchase failed:", error);
       Alert.alert(
-        "Restore Error",
-        getFriendlyErrorMessage(error, "There was a problem restoring your purchase. Please try again later."),
+        "Couldn't Restore Purchase",
+        getFriendlyErrorMessage(error, "We couldn't restore your purchase. Please try again later."),
       );
     } finally {
       setIsRestoring(false);
@@ -160,9 +143,10 @@ export default function AccountScreen() {
     if (deviceToken) {
       await removePushTokenFromServer(deviceToken).catch(() => {});
     }
+    // No manual navigation here: the root layout sends signed-out users to
+    // /login. Navigating too made the login screen open twice.
     await firebaseSignOut();
     setUser(null);
-    router.replace("/login");
   };
 
   const handleDeleteAccount = () => {
@@ -185,7 +169,6 @@ export default function AccountScreen() {
               await firebaseSignOut();
               setUser(null);
               Alert.alert("Account Deleted", "Your Substracker account was deleted.");
-              router.replace("/login");
             } catch (error) {
               console.error("Failed to delete account:", error);
               Alert.alert(
@@ -255,50 +238,29 @@ export default function AccountScreen() {
             )}
           </View>
 
-          <Text style={[styles.sectionLabel, { color: colors.text.muted }]}>PREFERENCES</Text>
+          <Text style={[styles.sectionLabel, { color: colors.text.muted }]}>NOTIFICATIONS</Text>
           <View style={[styles.card, { backgroundColor: colors.background.card }]}>
             <View style={[styles.row, { borderTopColor: colors.border.light, borderTopWidth: 0 }]}>
-              <Text style={[styles.rowLabel, { color: colors.text.secondary }]}>Notifications</Text>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.rowLabel, { color: colors.text.secondary }]}>Renewal reminders</Text>
+                <Text style={[styles.rowHint, { color: colors.text.muted }]}>
+                  Get notified before you are charged
+                </Text>
+              </View>
               <Switch
                 value={notificationsEnabled}
                 onValueChange={handleNotificationToggle}
+                disabled={notificationsBusy}
                 trackColor={{ false: colors.background.elevated, true: colors.accent.primary }}
                 thumbColor="#FFF"
               />
             </View>
-            <View style={[styles.row, { borderTopColor: colors.border.light }]}>
-              <Text style={[styles.rowLabel, { color: colors.text.secondary }]}>Currency</Text>
-              <View style={styles.valueChevron}>
-                <Text style={[styles.rowValue, { color: colors.text.primary }]}>USD</Text>
-                <Ionicons name="chevron-down" size={14} color={colors.text.muted} />
-              </View>
-            </View>
-          </View>
-
-          <Text style={[styles.sectionLabel, { color: colors.text.muted }]}>NOTIFICATIONS</Text>
-          <View style={[styles.card, { backgroundColor: colors.background.card }]}>
-            <TouchableOpacity
-              style={[styles.row, { borderTopColor: colors.border.light, borderTopWidth: 0 }]}
-              onPress={handleTestNotification}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.rowLabel, { color: colors.text.secondary }]}>Send test notification</Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
-            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.row, { borderTopColor: colors.border.light }]}
               onPress={handleOpenSystemSettings}
               activeOpacity={0.7}
             >
               <Text style={[styles.rowLabel, { color: colors.text.secondary }]}>Open system settings</Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.row, { borderTopColor: colors.border.light }]}
-              onPress={handleClearNotifications}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.rowLabel, { color: colors.text.secondary }]}>Clear local notifications</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
             </TouchableOpacity>
           </View>
@@ -371,7 +333,7 @@ const styles = StyleSheet.create({
   },
   rowLabel: { fontSize: 15, fontWeight: "600" },
   rowValue: { fontSize: 15, fontWeight: "700" },
-  valueChevron: { flexDirection: "row", alignItems: "center", gap: 6 },
+  rowHint: { fontSize: 12, fontWeight: "500", marginTop: 3 },
   destructiveLabel: { fontSize: 15, fontWeight: "700" },
   restoreLink: { alignItems: "center", paddingVertical: 6 },
   restoreLinkText: { fontSize: 14, fontWeight: "700" },

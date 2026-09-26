@@ -4,6 +4,7 @@ import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { testApiConnectivity } from "@/services/api";
 import { configureNotificationHandler, registerForPushNotifications } from "@/services/notifications";
 import { syncPremiumEntitlement } from "@/services/premium";
+import { hasOptedOutOfNotifications } from "@/utils/storage";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
@@ -52,11 +53,16 @@ function RootLayoutContent() {
   // issues (an uncaught exception from a native module during startup).
   useEffect(() => {
     if (!firebaseUser) return;
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       syncPremiumEntitlement();
-      registerForPushNotifications().catch((error) =>
-        console.log("Push notification init error:", error),
-      );
+      try {
+        // Respect a user who turned notifications off in Account.
+        if (!(await hasOptedOutOfNotifications())) {
+          await registerForPushNotifications();
+        }
+      } catch (error) {
+        console.log("Push notification init error:", error);
+      }
     }, 2000);
     return () => clearTimeout(timer);
   }, [firebaseUser]);

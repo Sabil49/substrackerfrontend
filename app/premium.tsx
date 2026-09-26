@@ -1,9 +1,12 @@
 // app/premium.tsx
 import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
-import { getFriendlyErrorMessage, userApi } from "@/services/api";
+import { getFriendlyErrorMessage, isUserCancelledError, userApi } from "@/services/api";
 import {
+  acquireIapConnection,
+  getPremiumProductId,
   PREMIUM_PRODUCT_IDS,
+  releaseIapConnection,
   restorePremiumFromStore,
   verifyPremiumPurchase,
 } from "@/services/premium";
@@ -11,7 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Linking from "expo-linking";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -113,26 +116,26 @@ export default function PremiumScreen() {
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [storeProducts, setStoreProducts] = useState<any[]>([]);
   const [isPremium, setIsPremium] = useState(false);
+  // True only between tapping "Get Premium" and the store's answer, so old
+  // transactions the store re-delivers in the background never pop up alerts.
+  const purchaseInFlight = useRef(false);
 
   const handleRestore = useCallback(async () => {
     setRestoreLoading(true);
 
     try {
-      await restorePremiumFromStore();
+      await restorePremiumFromStore({ syncWithStore: true });
       setIsPremium(true);
 
-      Alert.alert("Success", "Premium restored successfully!", [
+      Alert.alert("Premium Restored", "Your Premium subscription is active again.", [
         { text: "OK", onPress: () => router.replace("/(tabs)/account") },
       ]);
     } catch (error) {
-      Alert.alert(
-        "Restore Error",
-        getFriendlyErrorMessage(
-          error,
-          "There was a problem restoring your purchase. Please try again later.",
-        ),
-      );
       console.error("Error restoring purchase", error);
+      Alert.alert(
+        "Couldn't Restore Purchase",
+        getFriendlyErrorMessage(error, "We couldn't restore your purchase. Please try again later."),
+      );
     } finally {
       setRestoreLoading(false);
     }
@@ -151,17 +154,25 @@ export default function PremiumScreen() {
   );
 
   useEffect(() => {
+    let active = true;
+    let acquired = false;
+
     const initIAP = async () => {
       try {
-        await RNIap.initConnection();
+        await acquireIapConnection();
+        if (!active) {
+          // The screen closed while we were connecting — give it back.
+          await releaseIapConnection();
+          return;
+        }
+        acquired = true;
 
         const products = await (RNIap as any).fetchProducts({
           skus: SUBSCRIPTION_SKUS,
           type: "subs",
         });
 
-        console.log("IAP PRODUCTS:", JSON.stringify(products, null, 2));
-        setStoreProducts(products || []);
+        if (active) setStoreProducts(products || []);
       } catch (err) {
         console.error("RNIap init/products failed", err);
       }
@@ -170,34 +181,55 @@ export default function PremiumScreen() {
     initIAP();
 
     const purchaseUpdateSub = RNIap.purchaseUpdatedListener(async (purchase) => {
-      console.log("IAP purchase updated", purchase);
+      // Ignore anything that isn't one of our Premium plans.
+      const productId = getPremiumProductId(purchase);
+      if (!productId || !SUBSCRIPTION_SKUS.some((sku) => sku === productId)) return;
+
+      const wasUserInitiated = purchaseInFlight.current;
 
       try {
         await verifyPremiumPurchase(purchase);
-
         await finishPurchase(purchase);
+        purchaseInFlight.current = false;
+        setLoading(false);
         setIsPremium(true);
 
-        Alert.alert("Success", "Premium activated successfully!", [
+        Alert.alert("Welcome to Premium", "Your subscription is active. Enjoy!", [
           { text: "OK", onPress: () => router.replace("/(tabs)/account") },
         ]);
-      } catch (e) {
-        console.error("PURCHASE LISTENER ERROR:", e);
+      } catch (e: any) {
+        console.warn("Purchase verification failed:", e?.code, e?.message);
+        purchaseInFlight.current = false;
+        setLoading(false);
 
-        Alert.alert(
-          "Purchase Error",
-          e instanceof Error ? e.message : JSON.stringify(e, null, 2),
-        );
+        // An expired/revoked transaction can never succeed — clear it from the
+        // store's queue so it isn't re-delivered on every visit.
+        if (/expired|refunded|revoked/i.test(String(e?.message))) {
+          await finishPurchase(purchase);
+        }
+
+        // Only tell the user about failures of a purchase they just started.
+        if (wasUserInitiated) {
+          Alert.alert(
+            "Couldn't Confirm Purchase",
+            getFriendlyErrorMessage(e, "We couldn't confirm your purchase. Please try again."),
+          );
+        }
       }
     });
 
     const purchaseErrorSub = RNIap.purchaseErrorListener((error) => {
       console.warn("IAP purchase error", error);
+      purchaseInFlight.current = false;
+      setLoading(false);
+
+      // Closing the payment sheet isn't an error.
+      if (isUserCancelledError(error)) return;
 
       if (isAlreadyOwnedError(error)) {
         Alert.alert(
-          "Premium Already Owned",
-          "Apple says this subscription is already owned. Restore your purchase to unlock Premium on this Substracker profile.",
+          "You're Already Subscribed",
+          "This Apple ID already has Premium. Restore your purchase to unlock it here.",
           [
             { text: "Not Now", style: "cancel" },
             { text: "Restore", onPress: handleRestore },
@@ -207,15 +239,16 @@ export default function PremiumScreen() {
       }
 
       Alert.alert(
-        "Purchase error",
-        error.message || "An error occurred during purchase.",
+        "Purchase Not Completed",
+        getFriendlyErrorMessage(error, "We couldn't complete the purchase. Please try again."),
       );
     });
 
     return () => {
+      active = false;
       purchaseUpdateSub.remove();
       purchaseErrorSub.remove();
-      RNIap.endConnection();
+      if (acquired) releaseIapConnection();
     };
   }, [router, handleRestore]);
 
@@ -226,54 +259,63 @@ export default function PremiumScreen() {
       const plan = PRODUCTS.find((p) => p.id === selectedPlan);
 
       if (!plan) {
-        throw new Error("Selected Premium plan is not available.");
+        throw new Error("That plan isn't available right now.");
       }
 
-      let products = storeProducts;
+      await acquireIapConnection();
+      try {
+        let products = storeProducts;
 
-      if (!products.length) {
-        products = await (RNIap as any).fetchProducts({
-          skus: SUBSCRIPTION_SKUS,
+        if (!products.length) {
+          products = await (RNIap as any).fetchProducts({
+            skus: SUBSCRIPTION_SKUS,
+            type: "subs",
+          });
+
+          setStoreProducts(products || []);
+        }
+
+        const storeProduct = products.find(
+          (item: any) => getStoreProductId(item) === plan.productId,
+        );
+
+        if (!storeProduct) {
+          throw new Error(
+            "Premium plans couldn't be loaded from the App Store. Please try again in a few minutes.",
+          );
+        }
+
+        purchaseInFlight.current = true;
+
+        await (RNIap as any).requestPurchase({
+          request: {
+            apple: {
+              sku: plan.productId,
+            },
+            google: {
+              skus: [plan.productId],
+              subscriptionOffers:
+                storeProduct.subscriptionOfferDetailsAndroid?.map((offer: any) => ({
+                  sku: plan.productId,
+                  offerToken: offer.offerToken,
+                })) || [],
+            },
+          },
           type: "subs",
         });
-
-        setStoreProducts(products || []);
+      } finally {
+        await releaseIapConnection();
       }
+    } catch (error) {
+      console.error("handleUpgrade error:", error);
+      purchaseInFlight.current = false;
 
-      console.log("SUBSCRIPTION PRODUCTS:", JSON.stringify(products, null, 2));
-
-      const storeProduct = products.find(
-        (item: any) => getStoreProductId(item) === plan.productId,
-      );
-
-      if (!storeProduct) {
-        throw new Error(
-          `Subscription product not found: ${plan.productId}. Please wait a few minutes and try again.`,
+      if (!isUserCancelledError(error)) {
+        Alert.alert(
+          "Couldn't Start Purchase",
+          getFriendlyErrorMessage(error, "We couldn't start the purchase. Please try again."),
         );
       }
-
-      console.log("Starting subscription purchase:", plan.productId);
-
-      await (RNIap as any).requestPurchase({
-        request: {
-          apple: {
-            sku: plan.productId,
-          },
-          google: {
-            skus: [plan.productId],
-            subscriptionOffers:
-              storeProduct.subscriptionOfferDetailsAndroid?.map((offer: any) => ({
-                sku: plan.productId,
-                offerToken: offer.offerToken,
-              })) || [],
-          },
-        },
-        type: "subs",
-      });
-    } catch (error) {
-      console.error("handleUpgrade FULL ERROR:", error);
-
-      Alert.alert("Upgrade Error", getFriendlyErrorMessage(error));
     } finally {
       setLoading(false);
     }

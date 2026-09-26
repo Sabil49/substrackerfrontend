@@ -5,7 +5,19 @@
 // matching the visual pattern already used by (tabs)/account.tsx.
 import { useTheme } from "@/contexts/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import {
+  addMonths,
+  addYears,
+  eachDayOfInterval,
+  endOfMonth,
+  format,
+  getDay,
+  isSameDay,
+  startOfMonth,
+  subMonths,
+  subYears,
+} from "date-fns";
+import React, { useEffect, useState } from "react";
 import {
   Modal,
   StyleSheet,
@@ -235,19 +247,59 @@ export function OptionSheet({
   );
 }
 
+// Dates travel through the app as "YYYY-MM-DD" strings (local calendar day).
+export function parseYmd(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value || "").trim());
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function toYmd(date: Date) {
+  return format(date, "yyyy-MM-dd");
+}
+
+// "Sep 26, 2026" for display; falls back to the placeholder if unset/invalid.
+export function formatDateLabel(value: string, placeholder = "Select date") {
+  const date = parseYmd(value);
+  return date ? format(date, "MMM d, yyyy") : placeholder;
+}
+
+const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
+
+// A month-grid calendar in a modal — pick a day instead of typing a date.
 export function DateInputSheet({
   visible,
   value,
   onChangeText,
   onClose,
+  title = "Select date",
 }: {
   visible: boolean;
   value: string;
   onChangeText: (value: string) => void;
   onClose: () => void;
+  title?: string;
 }) {
   const { colors } = useTheme();
-  const today = new Date().toISOString().slice(0, 10);
+  const selected = parseYmd(value);
+  const [month, setMonth] = useState(() => startOfMonth(selected ?? new Date()));
+
+  // Re-open on the currently selected month each time the sheet is shown.
+  useEffect(() => {
+    if (visible) setMonth(startOfMonth(parseYmd(value) ?? new Date()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) });
+  const cells: (Date | null)[] = [...Array(getDay(startOfMonth(month))).fill(null), ...days];
+  const today = new Date();
+
+  const pick = (day: Date) => {
+    onChangeText(toYmd(day));
+    onClose();
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={onClose}>
@@ -256,31 +308,75 @@ export function DateInputSheet({
           style={[styles.sheetCard, { backgroundColor: colors.background.card }]}
           onPress={(event) => event.stopPropagation()}
         >
-          <Text style={[styles.sheetTitle, { color: colors.text.primary }]}>Started</Text>
-          <TouchableOpacity
-            style={[styles.sheetOption, { borderTopWidth: 0 }]}
-            onPress={() => {
-              onChangeText(today);
-              onClose();
-            }}
-          >
-            <Text style={[styles.sheetOptionText, { color: colors.text.primary }]}>Today</Text>
-          </TouchableOpacity>
-          <View style={[styles.dateInputRow, { borderTopColor: colors.border.light }]}>
-            <TextInput
-              style={[styles.dateInput, { color: colors.text.primary, borderColor: colors.border.default }]}
-              value={value}
-              onChangeText={onChangeText}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.text.disabled}
-            />
+          <Text style={[styles.sheetTitle, { color: colors.text.primary }]}>{title}</Text>
+
+          <View style={styles.calHeader}>
+            <TouchableOpacity onPress={() => setMonth((m) => subYears(m, 1))} hitSlop={8} style={styles.calNav}>
+              <Ionicons name="play-back" size={16} color={colors.text.muted} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setMonth((m) => subMonths(m, 1))} hitSlop={8} style={styles.calNav}>
+              <Ionicons name="chevron-back" size={20} color={colors.text.primary} />
+            </TouchableOpacity>
+            <Text style={[styles.calMonth, { color: colors.text.primary }]}>
+              {format(month, "MMMM yyyy")}
+            </Text>
+            <TouchableOpacity onPress={() => setMonth((m) => addMonths(m, 1))} hitSlop={8} style={styles.calNav}>
+              <Ionicons name="chevron-forward" size={20} color={colors.text.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setMonth((m) => addYears(m, 1))} hitSlop={8} style={styles.calNav}>
+              <Ionicons name="play-forward" size={16} color={colors.text.muted} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.sheetDone, { backgroundColor: colors.accent.primary }]}
-            onPress={onClose}
-          >
-            <Text style={styles.sheetDoneText}>Done</Text>
-          </TouchableOpacity>
+
+          <View style={styles.calRow}>
+            {WEEKDAYS.map((label, index) => (
+              <Text key={index} style={[styles.calWeekday, { color: colors.text.muted }]}>
+                {label}
+              </Text>
+            ))}
+          </View>
+
+          <View style={styles.calGrid}>
+            {cells.map((day, index) => {
+              if (!day) return <View key={`empty-${index}`} style={styles.calCell} />;
+              const isSelected = selected ? isSameDay(day, selected) : false;
+              const isToday = isSameDay(day, today);
+              return (
+                <TouchableOpacity
+                  key={day.toISOString()}
+                  style={styles.calCell}
+                  onPress={() => pick(day)}
+                  activeOpacity={0.6}
+                >
+                  <View
+                    style={[
+                      styles.calDay,
+                      isSelected && { backgroundColor: colors.accent.primary },
+                      !isSelected && isToday && { borderWidth: 1, borderColor: colors.accent.primary },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.calDayText,
+                        { color: isSelected ? "#FFFFFF" : colors.text.primary },
+                      ]}
+                    >
+                      {day.getDate()}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.calFooter}>
+            <TouchableOpacity onPress={() => pick(new Date())} style={styles.calFooterButton}>
+              <Text style={[styles.calFooterText, { color: colors.accent.primary }]}>Today</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onClose} style={styles.calFooterButton}>
+              <Text style={[styles.calFooterText, { color: colors.text.secondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
@@ -319,6 +415,16 @@ const styles = StyleSheet.create({
   sheetOptionText: { fontSize: 15, fontWeight: "600" },
   sheetDone: { marginTop: 12, borderRadius: 14, paddingVertical: 14, alignItems: "center" },
   sheetDoneText: { color: "#fff", fontSize: 15, fontWeight: "800" },
-  dateInputRow: { paddingVertical: 12, borderTopWidth: 1 },
-  dateInput: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
+  calHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
+  calNav: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  calMonth: { fontSize: 16, fontWeight: "800", flex: 1, textAlign: "center" },
+  calRow: { flexDirection: "row", marginBottom: 4 },
+  calWeekday: { flex: 1, textAlign: "center", fontSize: 12, fontWeight: "700" },
+  calGrid: { flexDirection: "row", flexWrap: "wrap" },
+  calCell: { width: "14.2857%", aspectRatio: 1, alignItems: "center", justifyContent: "center" },
+  calDay: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  calDayText: { fontSize: 15, fontWeight: "600" },
+  calFooter: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
+  calFooterButton: { paddingVertical: 10, paddingHorizontal: 8 },
+  calFooterText: { fontSize: 15, fontWeight: "700" },
 });

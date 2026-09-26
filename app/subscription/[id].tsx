@@ -1,5 +1,7 @@
 // app/subscription/[id].tsx
 import Button from "@/components/Button";
+import ServiceIcon from "@/components/ServiceIcon";
+import { findServiceByName } from "@/constants/services";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Subscription, subscriptionsApi } from "@/services/api";
 import { cancelLocalNotificationsForSubscription } from "@/services/notifications";
@@ -235,16 +237,25 @@ export default function SubscriptionDetailScreen() {
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.summaryRow}>
-            <View
-              style={[
-                styles.summaryIcon,
-                { backgroundColor: subscription.color || colors.background.elevated },
-              ]}
-            >
-              <Text style={styles.summaryIconText}>
-                {subscription.name.charAt(0).toUpperCase()}
-              </Text>
-            </View>
+            {findServiceByName(subscription.name) ? (
+              <ServiceIcon
+                name={subscription.name}
+                domain={findServiceByName(subscription.name)!.domain}
+                color={findServiceByName(subscription.name)!.color}
+                size={52}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.summaryIcon,
+                  { backgroundColor: subscription.color || colors.background.elevated },
+                ]}
+              >
+                <Text style={styles.summaryIconText}>
+                  {subscription.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
             <View style={{ flex: 1 }}>
               <Text style={[styles.summaryName, { color: colors.text.primary }]} numberOfLines={1}>
                 {subscription.name}

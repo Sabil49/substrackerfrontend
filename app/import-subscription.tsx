@@ -2,10 +2,13 @@
 import Button from "@/components/Button";
 import {
   DateInputSheet,
+  formatDateLabel,
   formatRemindSummary,
   OptionSheet,
+  parseYmd,
   RowCard,
   TextFieldRow,
+  toYmd,
   ToggleRow,
   ValueRow,
 } from "@/components/FormRow";
@@ -46,9 +49,9 @@ function normalizeDateInput(value: string | null | undefined) {
 }
 
 function toIsoDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
+  const day = parseYmd(value);
+  if (!day) return null;
+  return new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate(), 12)).toISOString();
 }
 
 export default function ImportSubscriptionScreen() {
@@ -66,7 +69,7 @@ export default function ImportSubscriptionScreen() {
   const [currency, setCurrency] = useState("USD");
   const [billingCycle, setBillingCycle] = useState("monthly");
   const [category, setCategory] = useState("other");
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(toYmd(new Date()));
   const [isTrial, setIsTrial] = useState(false);
   const [trialEndDate, setTrialEndDate] = useState("");
   const [notifyDays, setNotifyDays] = useState<number[]>(DEFAULT_REMINDERS);
@@ -76,6 +79,7 @@ export default function ImportSubscriptionScreen() {
   const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
   const [remindSheetOpen, setRemindSheetOpen] = useState(false);
   const [dateSheetOpen, setDateSheetOpen] = useState(false);
+  const [trialSheetOpen, setTrialSheetOpen] = useState(false);
   const [categorySheetOpen, setCategorySheetOpen] = useState(false);
 
   const hasExtraction = Boolean(name || amount || notes || confidence !== null);
@@ -172,7 +176,7 @@ export default function ImportSubscriptionScreen() {
       setCurrency(extracted.currency || "USD");
       setBillingCycle((extracted.billingCycle || "monthly").toLowerCase());
       setCategory((extracted.category || "other").toLowerCase());
-      setStartDate(normalizeDateInput(extracted.startDate) || new Date().toISOString().slice(0, 10));
+      setStartDate(normalizeDateInput(extracted.startDate) || toYmd(new Date()));
       setIsTrial(Boolean(extracted.isTrial));
       setTrialEndDate(normalizeDateInput(extracted.trialEndDate));
       setNotes(extracted.notes || "Imported from receipt screenshot");
@@ -224,25 +228,25 @@ export default function ImportSubscriptionScreen() {
 
   const saveSubscription = async () => {
     if (!name.trim()) {
-      Alert.alert("Missing Name", "Please enter a subscription name.");
+      Alert.alert("Name Needed", "Please enter a name for this subscription.");
       return;
     }
 
     const parsedAmount = Number(amount);
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid subscription amount.");
+      Alert.alert("Price Needed", "Please enter the price you pay, for example 9.99.");
       return;
     }
 
     const startIso = toIsoDate(startDate);
     if (!startIso) {
-      Alert.alert("Invalid Date", "Use YYYY-MM-DD for the start date.");
+      Alert.alert("Start Date Needed", "Please choose the date this subscription started.");
       return;
     }
 
     const trialIso = isTrial ? toIsoDate(trialEndDate) : null;
     if (isTrial && !trialIso) {
-      Alert.alert("Invalid Trial Date", "Use YYYY-MM-DD for the trial end date.");
+      Alert.alert("Trial End Date Needed", "Please choose the date your free trial ends.");
       return;
     }
 
@@ -372,11 +376,10 @@ export default function ImportSubscriptionScreen() {
                 onValueChange={setIsTrial}
               />
               {isTrial && (
-                <TextFieldRow
+                <ValueRow
                   label="Trial ends"
-                  value={trialEndDate}
-                  onChangeText={setTrialEndDate}
-                  placeholder="YYYY-MM-DD"
+                  value={formatDateLabel(trialEndDate)}
+                  onPress={() => setTrialSheetOpen(true)}
                 />
               )}
               <TextFieldRow
@@ -387,7 +390,7 @@ export default function ImportSubscriptionScreen() {
                 keyboardType="decimal-pad"
                 prefix={currency === "USD" ? "$" : currency}
               />
-              <ValueRow label="Started" value={startDate} onPress={() => setDateSheetOpen(true)} />
+              <ValueRow label="Started" value={formatDateLabel(startDate)} onPress={() => setDateSheetOpen(true)} />
               <ValueRow
                 label="Period"
                 value={BillingCycles.find((cycle) => cycle.id === billingCycle)?.name || "Monthly"}
@@ -459,9 +462,17 @@ export default function ImportSubscriptionScreen() {
             />
             <DateInputSheet
               visible={dateSheetOpen}
+              title="Started"
               value={startDate}
               onChangeText={setStartDate}
               onClose={() => setDateSheetOpen(false)}
+            />
+            <DateInputSheet
+              visible={trialSheetOpen}
+              title="Trial ends"
+              value={trialEndDate}
+              onChangeText={setTrialEndDate}
+              onClose={() => setTrialSheetOpen(false)}
             />
           </>
         )}

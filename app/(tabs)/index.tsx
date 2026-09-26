@@ -1,7 +1,9 @@
 // app/(tabs)/index.tsx
 import Button from "@/components/Button";
+import ServiceIcon from "@/components/ServiceIcon";
+import { findServiceByName } from "@/constants/services";
 import { useTheme } from "@/contexts/ThemeContext";
-import { Subscription, subscriptionsApi } from "@/services/api";
+import { getFriendlyErrorMessage, Subscription, subscriptionsApi } from "@/services/api";
 import { formatCurrency, formatShortDate, getDaysUntil } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -46,8 +48,10 @@ export default function HomeScreen() {
       setSubscriptions(data);
     } catch (err: any) {
       console.error("Failed to load subscriptions:", err);
-      const errorMessage =
-        err.response?.data?.error || err.message || "Failed to connect to server";
+      const errorMessage = getFriendlyErrorMessage(
+        err,
+        "We couldn't load your subscriptions. Pull down to try again.",
+      );
       setError(errorMessage);
       if (!loading) Alert.alert("Error", errorMessage);
     } finally {
@@ -138,7 +142,8 @@ export default function HomeScreen() {
 
   const renderRow = (item: Subscription, index: number) => {
     const daysUntil = getDaysUntil(item.nextBillingDate);
-    const rowColor = item.color || colors.background.elevated;
+    const service = findServiceByName(item.name);
+    const rowColor = item.color || service?.color || colors.background.elevated;
     const isLast = index === activeSubscriptions.length - 1;
     const nameInitial = (item.name?.trim().charAt(0) || "?").toUpperCase();
     const subtitle = item.isTrial && item.trialEndDate
@@ -156,9 +161,13 @@ export default function HomeScreen() {
         onPress={() => router.push(`/subscription/${item.id}`)}
         activeOpacity={0.85}
       >
-        <View style={styles.subIconChip}>
-          <Text style={styles.subIconText}>{nameInitial}</Text>
-        </View>
+        {service ? (
+          <ServiceIcon name={item.name} domain={service.domain} color={service.color} size={40} />
+        ) : (
+          <View style={styles.subIconChip}>
+            <Text style={styles.subIconText}>{nameInitial}</Text>
+          </View>
+        )}
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.subName} numberOfLines={1}>{item.name}</Text>
           <Text style={styles.subSubtitle} numberOfLines={1}>{subtitle}</Text>

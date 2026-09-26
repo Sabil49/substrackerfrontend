@@ -2,21 +2,21 @@
 import Button from "@/components/Button";
 import {
   DateInputSheet,
+  formatDateLabel,
   formatRemindSummary,
   OptionSheet,
+  parseYmd,
   RowCard,
   TextFieldRow,
+  toYmd,
   ToggleRow,
   ValueRow,
 } from "@/components/FormRow";
+import ServiceIcon from "@/components/ServiceIcon";
+import { filterServices, PopularService } from "@/constants/services";
 import { BillingCycles, Categories, NotificationOptions } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
-import {
-  getFriendlyErrorMessage,
-  subscriptionsApi,
-  Template,
-  templatesApi,
-} from "@/services/api";
+import { getFriendlyErrorMessage, subscriptionsApi } from "@/services/api";
 import {
   checkNotificationPermissions,
   scheduleLocalNotification,
@@ -36,6 +36,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 
+// A picked calendar day as an ISO timestamp at 12:00 UTC, so the same calendar
+// day shows up in every timezone (midnight can slip a day either way).
+const dayToIso = (day: Date) =>
+  new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate(), 12)).toISOString();
+
 export default function AddSubscriptionScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -43,14 +48,13 @@ export default function AddSubscriptionScreen() {
   const isEditMode = Boolean(id);
 
   const [loadingInitial, setLoadingInitial] = useState(isEditMode);
-  const [templates, setTemplates] = useState<Template[]>([]);
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [currency] = useState("USD");
   const [billingCycle, setBillingCycle] = useState("monthly");
   const [customDays, setCustomDays] = useState("");
   const [category, setCategory] = useState("");
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(toYmd(new Date()));
   const [isTrial, setIsTrial] = useState(false);
   const [trialEndDate, setTrialEndDate] = useState("");
   const [notifyDays, setNotifyDays] = useState<number[]>([7, 3, 1, 0]);
@@ -60,13 +64,11 @@ export default function AddSubscriptionScreen() {
   const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
   const [remindSheetOpen, setRemindSheetOpen] = useState(false);
   const [dateSheetOpen, setDateSheetOpen] = useState(false);
+  const [trialSheetOpen, setTrialSheetOpen] = useState(false);
   const [categorySheetOpen, setCategorySheetOpen] = useState(false);
 
   useEffect(() => {
-    if (!isEditMode) {
-      loadTemplates();
-      return;
-    }
+    if (!isEditMode) return;
 
     (async () => {
       try {
@@ -90,13 +92,14 @@ export default function AddSubscriptionScreen() {
     })();
   }, [isEditMode, id, router]);
 
-  const loadTemplates = async () => {
-    try {
-      const data = await templatesApi.getAll();
-      setTemplates(data);
-    } catch {
-      console.error("Failed to load templates");
-    }
+  // Popular services, A–Z, narrowed live by whatever is typed in the name box.
+  const matchingServices = filterServices(name);
+
+  const applyService = (service: PopularService) => {
+    setName(service.name);
+    setAmount(String(service.price));
+    setCategory(service.category);
+    setBillingCycle(service.billingCycle);
   };
 
   const scheduleLocalReminders = async (
@@ -131,13 +134,13 @@ export default function AddSubscriptionScreen() {
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      Alert.alert("Error", "Please enter a subscription name");
+      Alert.alert("Name Needed", "Please enter a name for this subscription.");
       return;
     }
 
     const parsedAmount = parseFloat(amount);
     if (!amount || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert("Error", "Please enter a valid amount");
+      Alert.alert("Price Needed", "Please enter the price you pay, for example 9.99.");
       return;
     }
 
@@ -147,21 +150,21 @@ export default function AddSubscriptionScreen() {
       billingCycle === "custom" &&
       (!Number.isFinite(parsedCustomDays) || parsedCustomDays! <= 0)
     ) {
-      Alert.alert("Error", "Please enter a valid number of days");
+      Alert.alert("Billing Days Needed", "Please enter how many days your billing cycle lasts.");
       return;
     }
 
-    const parsedStartDate = new Date(startDate);
-    if (!startDate || Number.isNaN(parsedStartDate.getTime())) {
-      Alert.alert("Error", "Please enter a valid start date (YYYY-MM-DD)");
+    const parsedStartDate = parseYmd(startDate);
+    if (!parsedStartDate) {
+      Alert.alert("Start Date Needed", "Please choose the date this subscription started.");
       return;
     }
 
     let parsedTrialEndDate: Date | undefined;
     if (isTrial) {
-      parsedTrialEndDate = new Date(trialEndDate);
-      if (!trialEndDate || Number.isNaN(parsedTrialEndDate.getTime())) {
-        Alert.alert("Error", "Please enter a valid trial end date");
+      parsedTrialEndDate = parseYmd(trialEndDate) ?? undefined;
+      if (!parsedTrialEndDate) {
+        Alert.alert("Trial End Date Needed", "Please choose the date your free trial ends.");
         return;
       }
     }
@@ -177,9 +180,9 @@ export default function AddSubscriptionScreen() {
           billingCycle: billingCycle.toUpperCase(),
           customCycleDays: parsedCustomDays || undefined,
           category: category || "Other",
-          startDate: parsedStartDate.toISOString(),
+          startDate: dayToIso(parsedStartDate),
           isTrial,
-          trialEndDate: isTrial ? parsedTrialEndDate?.toISOString() : null,
+          trialEndDate: isTrial && parsedTrialEndDate ? dayToIso(parsedTrialEndDate) : null,
           notifyDaysBefore: notifyDays,
           notes: notes.trim() || undefined,
         });
@@ -196,9 +199,9 @@ export default function AddSubscriptionScreen() {
         billingCycle: billingCycle.toUpperCase(),
         customCycleDays: parsedCustomDays || undefined,
         category: category || "Other",
-        startDate: parsedStartDate.toISOString(),
+        startDate: dayToIso(parsedStartDate),
         isTrial,
-        trialEndDate: parsedTrialEndDate?.toISOString(),
+        trialEndDate: parsedTrialEndDate ? dayToIso(parsedTrialEndDate) : undefined,
         // Pass array directly — backend expects z.array(z.number()), not a JSON string
         notifyDaysBefore: notifyDays,
         notes: notes.trim() || undefined,
@@ -269,31 +272,38 @@ export default function AddSubscriptionScreen() {
         </View>
 
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-          {!isEditMode && templates.length > 0 && (
+          {!isEditMode && matchingServices.length > 0 && (
             <View style={styles.templatesSection}>
-              <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>Quick Add</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templatesScroll}>
-                {templates.map((template) => (
+              <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>
+                {name.trim() ? "Suggestions" : "Popular services"}
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                style={styles.templatesScroll}
+              >
+                {matchingServices.map((service) => (
                   <TouchableOpacity
-                    key={template.id}
+                    key={service.name}
                     style={[styles.templateCard, { backgroundColor: colors.background.card }]}
-                    onPress={() => {
-                      setName(template.name);
-                      if ("suggestedAmount" in template && typeof template.suggestedAmount === "number") {
-                        setAmount(template.suggestedAmount.toString());
-                      } else if (template.avgPrice) {
-                        setAmount(template.avgPrice.toString());
-                      }
-                      if ("category" in template && typeof template.category === "string") {
-                        setCategory(template.category.toLowerCase());
-                      }
-                      if ("billingCycle" in template && typeof template.billingCycle === "string") {
-                        setBillingCycle(template.billingCycle.toLowerCase());
-                      }
-                    }}
+                    onPress={() => applyService(service)}
+                    activeOpacity={0.7}
                   >
-                    <Text style={styles.templateIcon}>{template.iconUrl || "📱"}</Text>
-                    <Text style={[styles.templateName, { color: colors.text.primary }]}>{template.name}</Text>
+                    <View style={styles.templateIcon}>
+                      <ServiceIcon
+                        name={service.name}
+                        domain={service.domain}
+                        color={service.color}
+                        size={44}
+                      />
+                    </View>
+                    <Text
+                      style={[styles.templateName, { color: colors.text.primary }]}
+                      numberOfLines={2}
+                    >
+                      {service.name}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -305,7 +315,7 @@ export default function AddSubscriptionScreen() {
               style={[styles.nameInput, { color: colors.text.primary }]}
               value={name}
               onChangeText={setName}
-              placeholder="Subscription name (e.g., Netflix)"
+              placeholder="Type a name, e.g. Netflix"
               placeholderTextColor={colors.text.muted}
             />
           </RowCard>
@@ -319,11 +329,10 @@ export default function AddSubscriptionScreen() {
               onValueChange={setIsTrial}
             />
             {isTrial && (
-              <TextFieldRow
+              <ValueRow
                 label="Trial ends"
-                value={trialEndDate}
-                onChangeText={setTrialEndDate}
-                placeholder="YYYY-MM-DD"
+                value={formatDateLabel(trialEndDate)}
+                onPress={() => setTrialSheetOpen(true)}
               />
             )}
             <TextFieldRow
@@ -334,7 +343,7 @@ export default function AddSubscriptionScreen() {
               keyboardType="decimal-pad"
               prefix="$"
             />
-            <ValueRow label="Started" value={startDate} onPress={() => setDateSheetOpen(true)} />
+            <ValueRow label="Started" value={formatDateLabel(startDate)} onPress={() => setDateSheetOpen(true)} />
             <ValueRow
               label="Period"
               value={selectedCycle?.name || "Monthly"}
@@ -423,9 +432,17 @@ export default function AddSubscriptionScreen() {
       />
       <DateInputSheet
         visible={dateSheetOpen}
+        title="Started"
         value={startDate}
         onChangeText={setStartDate}
         onClose={() => setDateSheetOpen(false)}
+      />
+      <DateInputSheet
+        visible={trialSheetOpen}
+        title="Trial ends"
+        value={trialEndDate}
+        onChangeText={setTrialEndDate}
+        onClose={() => setTrialSheetOpen(false)}
       />
     </View>
   );
@@ -485,15 +502,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   templateCard: {
-    width: 100,
-    padding: 12,
-    borderRadius: 12,
+    width: 96,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 14,
     alignItems: "center",
-    marginRight: 12,
+    marginRight: 10,
   },
   templateIcon: {
-    fontSize: 32,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   templateName: {
     fontSize: 12,

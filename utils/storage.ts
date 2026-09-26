@@ -10,6 +10,22 @@ export const STORAGE_KEYS = {
   NOTIFICATION_PERMISSION_ASKED: "notificationPermissionAsked",
 };
 
+// The user switched notifications off in Account. Launch-time auto-registration
+// must respect this, otherwise the toggle flips back on the next time the app opens.
+const NOTIFICATIONS_OPT_OUT_KEY = "notificationsOptOut";
+
+export async function setNotificationsOptOut(optedOut: boolean) {
+  if (optedOut) {
+    await AsyncStorage.setItem(NOTIFICATIONS_OPT_OUT_KEY, "true");
+  } else {
+    await AsyncStorage.removeItem(NOTIFICATIONS_OPT_OUT_KEY);
+  }
+}
+
+export async function hasOptedOutOfNotifications(): Promise<boolean> {
+  return (await AsyncStorage.getItem(NOTIFICATIONS_OPT_OUT_KEY)) === "true";
+}
+
 export async function setOnboardingCompleted() {
   await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING_COMPLETED, "true");
 }

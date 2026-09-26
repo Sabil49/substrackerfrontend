@@ -29,19 +29,107 @@ async function callFn<TResult = any>(name: string, data: Record<string, any> = {
   return response.data as TResult;
 }
 
+const OFFLINE_MESSAGE =
+  "We couldn't connect. Check your internet connection and try again.";
+
+// Plain-language text for the error codes users can realistically hit.
+const CODE_MESSAGES: Record<string, string> = {
+  // Firebase Auth
+  "auth/invalid-credential": "Incorrect email or password. Please try again.",
+  "auth/wrong-password": "Incorrect email or password. Please try again.",
+  "auth/invalid-login-credentials": "Incorrect email or password. Please try again.",
+  "auth/user-not-found": "We couldn't find an account with that email.",
+  "auth/invalid-email": "Please enter a valid email address.",
+  "auth/missing-email": "Please enter your email address.",
+  "auth/missing-password": "Please enter your password.",
+  "auth/email-already-in-use": "An account with this email already exists. Try logging in instead.",
+  "auth/weak-password": "Please choose a stronger password (at least 8 characters).",
+  "auth/too-many-requests": "Too many attempts. Please wait a moment and try again.",
+  "auth/network-request-failed": OFFLINE_MESSAGE,
+  "auth/user-disabled": "This account has been disabled. Please contact support.",
+  "auth/account-exists-with-different-credential":
+    "An account already exists with this email using a different sign-in method.",
+  "auth/requires-recent-login": "For your security, please sign in again and retry.",
+  "auth/operation-not-allowed": "This sign-in method isn't available right now.",
+  // Cloud Functions
+  "functions/unauthenticated": "Your session has expired. Please sign in again.",
+  "functions/permission-denied": "You don't have permission to do that.",
+  "functions/not-found": "We couldn't find that. It may have been removed.",
+  "functions/unavailable": OFFLINE_MESSAGE,
+  "functions/deadline-exceeded": OFFLINE_MESSAGE,
+  "functions/invalid-argument": "Some details look incorrect. Please check them and try again.",
+  "functions/internal": "Something went wrong on our side. Please try again in a moment.",
+  "functions/unknown": "Something went wrong. Please try again in a moment.",
+  "functions/cancelled": "The request was cancelled. Please try again.",
+  "functions/failed-precondition": "We couldn't complete that request. Please try again.",
+  "functions/already-exists": "That already exists.",
+  "functions/resource-exhausted":
+    "You've reached the free plan limit. Upgrade to Premium to add more.",
+  // In-app purchases
+  "network-error": OFFLINE_MESSAGE,
+  "service-error": "The App Store isn't available right now. Please try again shortly.",
+  "item-unavailable": "This plan isn't available right now. Please try again later.",
+  "product-not-found": "This plan isn't available right now. Please try again later.",
+  "billing-unavailable": "Purchases aren't available on this device right now.",
+  "not-prepared": "The App Store isn't ready yet. Please try again in a moment.",
+  "E_NOT_PREPARED": "The App Store isn't ready yet. Please try again in a moment.",
+};
+
+// Server messages we trust to show as-is for these codes (they're written for
+// users, e.g. the free-plan limit or "already linked to another account").
+const SERVER_MESSAGE_CODES = new Set([
+  "functions/resource-exhausted",
+  "functions/already-exists",
+  "functions/failed-precondition",
+  "functions/invalid-argument",
+]);
+
+const CANCEL_CODES = new Set([
+  "ERR_REQUEST_CANCELED",
+  "ERR_CANCELED",
+  "user-cancelled",
+  "E_USER_CANCELLED",
+  "SIGN_IN_CANCELLED",
+  "auth/popup-closed-by-user",
+  "auth/cancelled-popup-request",
+  "-5",
+  "12501",
+]);
+
+// True when the user backed out of a sign-in or purchase sheet — that isn't
+// an error and shouldn't show an alert.
+export function isUserCancelledError(error: any): boolean {
+  const code = String(error?.code ?? "");
+  if (CANCEL_CODES.has(code)) return true;
+  const message = String(error?.message ?? "").toLowerCase();
+  return message.includes("user cancel") || message.includes("user canceled") || message.includes("cancelled by user");
+}
+
+// Looks like something a developer wrote, not something to show a person.
+const TECHNICAL_PATTERN =
+  /\b(null|undefined|NaN|TypeError|ReferenceError|SyntaxError|Firebase|firestore|zod|stack|json|expected|received|internal|invalid[_ ]argument|callable|native|module|exception|http|status|code)\b|\[[^\]]*\]|[{}<>]|\bat \S+ \(/i;
+
+function isUserFriendly(message: unknown): message is string {
+  if (typeof message !== "string") return false;
+  const text = message.trim();
+  return text.length > 0 && text.length <= 180 && !TECHNICAL_PATTERN.test(text);
+}
+
 export function getFriendlyErrorMessage(
   error: any,
   fallback = "Something went wrong. Please try again.",
 ) {
-  // Firebase callable errors: { code: "functions/<name>", message, details }
-  if (typeof error?.code === "string" && error.code.startsWith("functions/")) {
-    if (error.code === "functions/unavailable" || error.code === "functions/deadline-exceeded") {
-      return "We could not connect to SubTracker. Check your internet connection and try again.";
-    }
-    if (typeof error.message === "string" && error.message.trim()) return error.message;
+  const code = typeof error?.code === "string" ? error.code : "";
+  const rawMessage = typeof error?.message === "string" ? error.message : "";
+
+  if (SERVER_MESSAGE_CODES.has(code) && isUserFriendly(rawMessage)) return rawMessage;
+  if (code && CODE_MESSAGES[code]) return CODE_MESSAGES[code];
+
+  if (/network request failed|network error|failed to fetch|timed? ?out|offline/i.test(rawMessage)) {
+    return OFFLINE_MESSAGE;
   }
 
-  if (typeof error?.message === "string" && error.message.trim()) return error.message;
+  if (isUserFriendly(rawMessage)) return rawMessage;
   return fallback;
 }
 

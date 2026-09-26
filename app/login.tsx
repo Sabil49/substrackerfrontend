@@ -3,7 +3,7 @@ import Button from "@/components/Button";
 import { isAppleAuthAvailable } from "@/config/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { getFriendlyErrorMessage } from "@/services/api";
+import { getFriendlyErrorMessage, isUserCancelledError } from "@/services/api";
 import { Ionicons } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { LinearGradient } from "expo-linear-gradient";
@@ -22,19 +22,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function LoginScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { firebaseUser, signInWithEmail, signInWithGoogle, signInWithApple } =
+  const { signInWithEmail, signInWithGoogle, signInWithApple } =
     useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState<"email" | "google" | "apple" | null>(
     null,
   );
-
-  React.useEffect(() => {
-    if (firebaseUser) {
-      router.replace("/(tabs)/account");
-    }
-  }, [firebaseUser, router]);
 
   const handleEmailLogin = async () => {
     if (!email.trim() || !password) {
@@ -44,7 +38,6 @@ export default function LoginScreen() {
     setLoading("email");
     try {
       await signInWithEmail(email.trim(), password);
-      router.replace("/(tabs)/account");
     } catch (err: any) {
       console.error("[Login] error", err);
       Alert.alert(
@@ -63,8 +56,8 @@ export default function LoginScreen() {
     setLoading("google");
     try {
       await signInWithGoogle();
-      router.replace("/(tabs)/account");
     } catch (err: any) {
+      if (isUserCancelledError(err)) return;
       console.error("[Login] Google error", err);
       Alert.alert("Google Sign-In Failed", getFriendlyErrorMessage(err));
     } finally {
@@ -76,9 +69,8 @@ export default function LoginScreen() {
     setLoading("apple");
     try {
       await signInWithApple();
-      router.replace("/(tabs)/account");
     } catch (err: any) {
-      if (err?.code !== "ERR_REQUEST_CANCELED") {
+      if (!isUserCancelledError(err)) {
         console.error("[Login] Apple error", err);
         Alert.alert("Apple Sign-In Failed", getFriendlyErrorMessage(err));
       }

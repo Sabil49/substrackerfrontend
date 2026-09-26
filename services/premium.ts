@@ -1,7 +1,8 @@
+import { functionsInstance } from "@/config/firebase";
+import { getFriendlyErrorMessage } from "@/services/api";
 import { httpsCallable } from "firebase/functions";
 import { Platform } from "react-native";
 import * as RNIap from "react-native-iap";
-import { functionsInstance } from "@/config/firebase";
 
 export const PREMIUM_PRODUCT_IDS = Platform.OS === 'android'
   ? ['com.substracker.monthly', 'com.substracker.yearly'] as const
@@ -11,6 +12,59 @@ export const PREMIUM_PRODUCT_IDS = Platform.OS === 'android'
 ] as const;
 
 export type PremiumPlanId = "monthly" | "yearly";
+
+const STORE_NAME = Platform.OS === "ios" ? "Apple ID" : "Google account";
+
+export class NoPremiumFoundError extends Error {
+  constructor() {
+    super(
+      `We couldn't find an active Premium subscription for this ${STORE_NAME}. ` +
+        `If you subscribed with a different ${STORE_NAME}, switch to it in your device settings and try again.`,
+    );
+    this.name = "NoPremiumFoundError";
+  }
+}
+
+// --- Store connection -------------------------------------------------------
+// The store connection is shared by the paywall screen, "Restore Purchase" and
+// the background entitlement sync. It is reference-counted so that one of them
+// finishing never closes the connection another is still using (which used to
+// break purchases and restores), and so every caller has a connection open
+// before it talks to the store.
+let connectionUsers = 0;
+let connected = false;
+
+// Open/close requests run strictly one after another, so a close can never
+// overlap (and cancel) a connection that another caller is just opening.
+let queue: Promise<unknown> = Promise.resolve();
+function serialize<T>(task: () => Promise<T>): Promise<T> {
+  const run = queue.then(task, task);
+  queue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+export function acquireIapConnection() {
+  return serialize(async () => {
+    if (!connected) {
+      await RNIap.initConnection();
+      connected = true;
+    }
+    connectionUsers += 1;
+  });
+}
+
+export function releaseIapConnection() {
+  return serialize(async () => {
+    connectionUsers = Math.max(0, connectionUsers - 1);
+    if (connectionUsers === 0 && connected) {
+      connected = false;
+      await RNIap.endConnection().catch(() => {});
+    }
+  });
+}
 
 export function getPremiumProductId(purchase: any): string | undefined {
   return purchase?.productId || purchase?.sku || purchase?.currentPlanId;
@@ -31,12 +85,16 @@ async function postStorePurchase(
   mode: "verify" | "restore",
 ) {
   const storeToken = getStoreToken(purchase);
+  const failureText =
+    mode === "restore"
+      ? "We couldn't restore your purchase. Please try again."
+      : "We couldn't confirm your purchase. Please try again.";
 
   if (!storeToken) {
     throw new Error(
       Platform.OS === "ios"
-        ? "Apple did not return a signed transaction."
-        : "Google Play did not return a purchase token.",
+        ? "Apple didn't return the purchase details. Please try again."
+        : "Google Play didn't return the purchase details. Please try again.",
     );
   }
 
@@ -54,15 +112,15 @@ async function postStorePurchase(
         : { purchaseToken: storeToken }),
     });
     const result = response.data as any;
-    if (!result?.isPro) {
-      throw new Error(`${mode === "restore" ? "Restore" : "Purchase verification"} failed.`);
-    }
+    if (!result?.isPro) throw new Error(failureText);
     return result;
   } catch (error: any) {
-    throw new Error(
-      error?.message ||
-        `${mode === "restore" ? "Restore" : "Purchase verification"} failed.`,
-    );
+    console.warn(`[premium] ${mode} failed:`, error?.code, error?.message);
+    // Keep the error code so callers can react to it (e.g. an expired
+    // transaction), but only ever expose a plain-language message.
+    throw Object.assign(new Error(getFriendlyErrorMessage(error, failureText)), {
+      code: error?.code,
+    });
   }
 }
 
@@ -90,36 +148,47 @@ export async function getActivePremiumSubscriptions() {
     });
 }
 
-export async function restorePremiumFromStore() {
-  const subscriptions = await getActivePremiumSubscriptions();
-  if (!subscriptions.length) {
-    throw new Error("No active SubTracker Premium subscription was found.");
-  }
-
-  let lastError: unknown;
-  for (const subscription of subscriptions) {
-    try {
-      return await postStorePurchase(subscription, "restore");
-    } catch (error) {
-      lastError = error;
+// `syncWithStore` asks the App Store to refresh this device's purchases first.
+// That can show an Apple ID prompt, so it is only used when the user taps
+// "Restore Purchase" — never for the silent background sync.
+export async function restorePremiumFromStore({
+  syncWithStore = false,
+}: { syncWithStore?: boolean } = {}) {
+  await acquireIapConnection();
+  try {
+    if (syncWithStore) {
+      try {
+        await RNIap.restorePurchases();
+      } catch (error) {
+        console.log("[premium] store sync skipped:", error);
+      }
     }
+
+    const subscriptions = await getActivePremiumSubscriptions();
+    if (!subscriptions.length) throw new NoPremiumFoundError();
+
+    let lastError: unknown;
+    for (const subscription of subscriptions) {
+      try {
+        return await postStorePurchase(subscription, "restore");
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new NoPremiumFoundError();
+  } finally {
+    await releaseIapConnection();
   }
-  throw lastError || new Error("No restorable Premium subscription was found.");
 }
 
 export async function syncPremiumEntitlement() {
   if (Platform.OS !== "ios" && Platform.OS !== "android") return false;
 
-  let connected = false;
   try {
-    await RNIap.initConnection();
-    connected = true;
     await restorePremiumFromStore();
     return true;
   } catch (error) {
     console.log("Premium entitlement sync skipped:", error);
     return false;
-  } finally {
-    if (connected) await RNIap.endConnection().catch(() => {});
   }
 }
