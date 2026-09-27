@@ -1,4 +1,5 @@
 // app/add-subscription.tsx
+import BrandLoader from "@/components/BrandLoader";
 import Button from "@/components/Button";
 import {
   DateInputSheet,
@@ -21,7 +22,6 @@ import { getFriendlyErrorMessage, subscriptionsApi } from "@/services/api";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
@@ -199,7 +199,7 @@ export default function AddSubscriptionScreen() {
   if (loadingInitial) {
     return (
       <View style={[styles.root, styles.loadingContainer, { backgroundColor: colors.background.primary }]}>
-        <ActivityIndicator size="large" color={colors.accent.primary} />
+        <BrandLoader />
       </View>
     );
   }

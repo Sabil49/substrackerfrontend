@@ -3,6 +3,7 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage, subscriptionsApi, User, userApi } from "@/services/api";
+import { dataCache, FRESH_MS } from "@/services/dataCache";
 import {
   cancelAllScheduledNotifications,
   checkNotificationPermissions,
@@ -35,7 +36,7 @@ export default function AccountScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { firebaseUser, signOut: firebaseSignOut } = useAuth();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => dataCache.get<User>("user")?.data ?? null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationsBusy, setNotificationsBusy] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -53,12 +54,17 @@ export default function AccountScreen() {
   };
 
   const loadUser = async () => {
-    try {
-      const data = await userApi.get();
-      setUser(data);
-    } catch {
-      console.log("Could not load user profile");
-      setUser(null);
+    const cached = dataCache.get<User>("user");
+    if (cached) setUser(cached.data);
+    if (!cached || !dataCache.isFresh("user", FRESH_MS)) {
+      try {
+        const data = await userApi.get();
+        dataCache.set("user", data);
+        setUser(data);
+      } catch {
+        console.log("Could not load user profile");
+        if (!cached) setUser(null);
+      }
     }
     try {
       await refreshNotificationState();

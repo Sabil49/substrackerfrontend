@@ -1,5 +1,6 @@
 // app/services/api.ts
 import { format } from "date-fns";
+import { dataCache } from "./dataCache";
 import { httpsCallable } from "firebase/functions";
 import { functionsInstance } from "../config/firebase";
 
@@ -24,9 +25,29 @@ export const testApiConnectivity = async (): Promise<boolean> => {
 // setup, there's no manual token-fetch/interceptor step. Every caller is
 // authenticated (the app requires sign-in before it renders any screen that
 // calls these), so no guest fallback is needed here.
-async function callFn<TResult = any>(name: string, data: Record<string, any> = {}): Promise<TResult> {
-  const callable = httpsCallable(functionsInstance, name);
-  const response = await callable(data);
+// The Firebase callable client turns `undefined` into `null` on the wire (the
+// key is kept), and a null in an optional field made the server reject the
+// request — e.g. "Please enter how many days your billing cycle lasts" on a
+// plain Monthly subscription. Leave undefined (and NaN) values out entirely.
+function stripUndefined(value: any): any {
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined && !(typeof item === "number" && Number.isNaN(item)))
+        .map(([key, item]) => [key, stripUndefined(item)]),
+    );
+  }
+  return value;
+}
+
+async function callFn<TResult = any>(
+  name: string,
+  data: Record<string, any> = {},
+  options?: { timeout?: number },
+): Promise<TResult> {
+  const callable = httpsCallable(functionsInstance, name, options);
+  const response = await callable(stripUndefined(data));
   return response.data as TResult;
 }
 
@@ -79,6 +100,7 @@ const CODE_MESSAGES: Record<string, string> = {
 // Server messages we trust to show as-is for these codes (they're written for
 // users, e.g. the free-plan limit or "already linked to another account").
 const SERVER_MESSAGE_CODES = new Set([
+  "functions/unavailable", // a real network failure has no sentence, so it still maps to "offline"
   "functions/resource-exhausted",
   "functions/already-exists",
   "functions/failed-precondition",
@@ -287,6 +309,7 @@ export const subscriptionsApi = {
       today: format(new Date(), "yyyy-MM-dd"),
     };
     const response = await callFn<{ subscription: Subscription }>("createSubscription", payload);
+    dataCache.markStale("subscriptions", "analytics");
     return response.subscription;
   },
 
@@ -298,11 +321,13 @@ export const subscriptionsApi = {
       ...(data.billingCycle ? { billingCycle: data.billingCycle.toUpperCase() } : {}),
     };
     const response = await callFn<{ subscription: Subscription }>("updateSubscription", payload);
+    dataCache.markStale("subscriptions", "analytics");
     return response.subscription;
   },
 
   delete: async (id: string): Promise<void> => {
     await callFn("deleteSubscription", { id });
+    dataCache.markStale("subscriptions", "analytics");
   },
 
   markReviewed: async (id: string): Promise<Subscription> => {
@@ -310,6 +335,7 @@ export const subscriptionsApi = {
       id,
       lastReviewedAt: new Date().toISOString(),
     });
+    dataCache.markStale("subscriptions", "analytics");
     return response.subscription;
   },
 
@@ -318,6 +344,7 @@ export const subscriptionsApi = {
       id,
       usageCount: "increment",
     });
+    dataCache.markStale("subscriptions", "analytics");
     return response.subscription;
   },
 
@@ -328,6 +355,7 @@ export const subscriptionsApi = {
       isActive: false,
       ...(cancelReason ? { cancelReason } : {}),
     });
+    dataCache.markStale("subscriptions", "analytics");
     return response.subscription;
   },
 };
@@ -339,7 +367,10 @@ export const subscriptionsApi = {
 
 export const importApi = {
   receipt: async (data: { imageBase64: string; mimeType?: string }): Promise<ImportedSubscription> => {
-    const response = await callFn<{ subscription: ImportedSubscription }>("importReceipt", data);
+    // Reading an image can take longer than the 70 s default.
+    const response = await callFn<{ subscription: ImportedSubscription }>("importReceipt", data, {
+      timeout: 120_000,
+    });
     return response.subscription;
   },
 };
@@ -365,6 +396,7 @@ export const userApi = {
 
   deleteAccount: async (): Promise<void> => {
     await callFn("deleteUser");
+    dataCache.clear();
   },
 };
 

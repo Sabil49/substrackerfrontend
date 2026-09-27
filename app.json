@@ -16,7 +16,8 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "Substracker uses your photo library only when you choose a receipt or subscription screenshot to import.",
         "NSCameraUsageDescription": "Substracker uses your camera only when you choose to photograph a receipt or subscription screenshot to import."
-      }
+      },
+      "buildNumber": "44"
     },
     "android": {
       "package": "com.sabil.subscriptiontracker",
@@ -79,10 +80,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "f51bbbb6-2cd9-45c1-84b1-4e927df82404"
+        "projectId": "3a14e9db-1796-4036-93a6-6c02d9898997"
       }
     },
-    "owner": "myzoapp"
+    "owner": "myzoapp8780"
   }
 }
-

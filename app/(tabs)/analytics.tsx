@@ -1,13 +1,14 @@
 // app/(tabs)/analytics.tsx
 import Button from "@/components/Button";
 import { useTheme } from "@/contexts/ThemeContext";
+import BrandLoader from "@/components/BrandLoader";
 import { Analytics, analyticsApi, getFriendlyErrorMessage } from "@/services/api";
+import { dataCache, FRESH_MS } from "@/services/dataCache";
 import { formatCurrency, formatShortDate } from "@/utils/date";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -19,30 +20,45 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function AnalyticsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const [analytics, setAnalytics] = useState<Analytics | null>(null);
-  const [loading, setLoading] = useState(true);
+  type AnalyticsView = { analytics: Analytics | null; premiumRequired: boolean };
+  const known = dataCache.get<AnalyticsView>("analytics");
+  const [analytics, setAnalytics] = useState<Analytics | null>(known?.data.analytics ?? null);
+  const [loading, setLoading] = useState(!known);
   const [refreshing, setRefreshing] = useState(false);
-  const [premiumRequired, setPremiumRequired] = useState(false);
+  const [premiumRequired, setPremiumRequired] = useState(known?.data.premiumRequired ?? false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const loadAnalytics = async () => {
+  const loadAnalytics = async (force = false) => {
+    const cached = dataCache.get<AnalyticsView>("analytics");
+    if (cached) {
+      setAnalytics(cached.data.analytics);
+      setPremiumRequired(cached.data.premiumRequired);
+      setLoading(false);
+      if (!force && dataCache.isFresh("analytics", FRESH_MS)) {
+        setRefreshing(false);
+        return;
+      }
+    }
+
     try {
-      console.log("📊 Loading analytics...");
       const data = await analyticsApi.get();
-      console.log("✅ Analytics loaded successfully");
+      dataCache.set("analytics", { analytics: data, premiumRequired: false });
       setAnalytics(data);
       setPremiumRequired(false);
       setLoadError(null);
     } catch (error: any) {
-      console.error("❌ Failed to load analytics:", error);
-      setAnalytics(null);
+      console.error("Failed to load analytics:", error);
       if (error?.code === "functions/permission-denied") {
+        dataCache.set("analytics", { analytics: null, premiumRequired: true });
+        setAnalytics(null);
         setPremiumRequired(true);
         setLoadError(null);
-      } else {
+      } else if (!cached?.data.analytics) {
+        // Only report a failure when there is nothing on screen to keep showing.
+        setAnalytics(null);
         setPremiumRequired(false);
         setLoadError(
-          getFriendlyErrorMessage(error, "We could not load analytics. Pull down to try again."),
+          getFriendlyErrorMessage(error, "We couldn't load your statistics. Pull down to try again."),
         );
       }
     } finally {
@@ -54,12 +70,13 @@ export default function AnalyticsScreen() {
   useFocusEffect(
     useCallback(() => {
       loadAnalytics();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadAnalytics();
+    loadAnalytics(true);
   };
 
   if (loading) {
@@ -77,7 +94,7 @@ export default function AnalyticsScreen() {
           </Text>
         </View>
         <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color={colors.accent.primary} />
+          <BrandLoader />
         </View>
       </SafeAreaView>
     );

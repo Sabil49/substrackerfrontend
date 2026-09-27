@@ -1,5 +1,6 @@
 import { functionsInstance } from "@/config/firebase";
 import { getFriendlyErrorMessage } from "@/services/api";
+import { dataCache } from "@/services/dataCache";
 import { httpsCallable } from "firebase/functions";
 import { Platform } from "react-native";
 import * as RNIap from "react-native-iap";
@@ -178,6 +179,8 @@ async function postStorePurchase(
     });
     const result = response.data as any;
     if (!result?.isPro) throw new Error(failureText);
+    // Premium status changed: account and statistics must be refetched.
+    dataCache.markStale("user", "analytics");
     return result;
   } catch (error: any) {
     console.warn(`[premium] ${mode} failed:`, error?.code, error?.message);

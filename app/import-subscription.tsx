@@ -45,9 +45,11 @@ const DEFAULT_REMINDERS = [7, 3, 1, 0];
 // instead of failing after a long upload.
 const MAX_IMAGE_BASE64_CHARS = 6_500_000;
 
+// Only accept a real YYYY-MM-DD date; anything else ("March 5") is ignored
+// rather than turned into a garbled value.
 function normalizeDateInput(value: string | null | undefined) {
-  if (!value) return "";
-  return value.slice(0, 10);
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value ?? "");
+  return match ? match[1] : "";
 }
 
 function toIsoDate(value: string) {

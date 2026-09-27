@@ -1,6 +1,7 @@
 // app/contexts/AuthContext.tsx
 import { auth, GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, isAppleAuthAvailable } from "@/config/firebase";
 import { authApi, User, userApi } from "@/services/api";
+import { dataCache } from "@/services/dataCache";
 import * as AppleAuthentication from "expo-apple-authentication";
 import {
   createUserWithEmailAndPassword,
@@ -19,6 +20,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -48,8 +50,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [appUser, setAppUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
 
+  const lastUid = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      // A different (or no) user: never show the previous person's cached data.
+      const uid = user?.uid ?? null;
+      if (lastUid.current !== uid) {
+        dataCache.clear();
+        lastUid.current = uid;
+      }
       setFirebaseUser(user);
       setInitializing(false);
     });
@@ -71,7 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     await signInWithEmailAndPassword(auth, email, password);
-    setAppUser(await syncBackendSession());
+    syncBackendSession().then(setAppUser).catch(() => {});
   }, []);
 
   const signUpWithEmail = useCallback(async (email: string, password: string, name?: string) => {
@@ -79,7 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (name?.trim()) {
       await updateProfile(credential.user, { displayName: name.trim() });
     }
-    setAppUser(await syncBackendSession());
+    syncBackendSession().then(setAppUser).catch(() => {});
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
@@ -99,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const credential = GoogleAuthProvider.credential(idToken);
     await signInWithCredential(auth, credential);
-    setAppUser(await syncBackendSession());
+    syncBackendSession().then(setAppUser).catch(() => {});
   }, []);
 
   const signInWithApple = useCallback(async () => {
@@ -120,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       idToken: credentialResult.identityToken,
     });
     await signInWithCredential(auth, credential);
-    setAppUser(await syncBackendSession());
+    syncBackendSession().then(setAppUser).catch(() => {});
   }, []);
 
   const signOut = useCallback(async () => {

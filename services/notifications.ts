@@ -13,11 +13,14 @@ import { deviceApi, Subscription } from "./api";
 // mounted, instead of running before anything else has a chance to.
 export function configureNotificationHandler() {
   Notifications.setNotificationHandler({
+    // While the app is open, reminders stay quiet (no banner, no sound) so
+    // nothing pops up over what the user is doing. They still show as normal
+    // notifications when the app is closed or in the background.
     handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
+      shouldShowAlert: false,
+      shouldPlaySound: false,
       shouldSetBadge: false,
-      shouldShowBanner: true,
+      shouldShowBanner: false,
       shouldShowList: true,
     }),
   });
@@ -97,7 +100,10 @@ export async function requestNotificationPermission() {
   return status === "granted";
 }
 
+let lastReminderSignature: string | null = null;
+
 export async function cancelAllScheduledNotifications() {
+  lastReminderSignature = null;
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
@@ -153,8 +159,10 @@ async function rebuildReminders(subscriptions: Subscription[]) {
     hasOptedOutOfNotifications(),
   ]);
 
-  await Notifications.cancelAllScheduledNotificationsAsync();
-  if (!allowed || optedOut) return;
+  if (!allowed || optedOut) {
+    await cancelAllScheduledNotifications();
+    return;
+  }
 
   const now = Date.now();
   const upcoming: { sub: Subscription; daysBefore: number; when: Date; trial: boolean }[] = [];
@@ -176,8 +184,17 @@ async function rebuildReminders(subscriptions: Subscription[]) {
   }
 
   upcoming.sort((a, b) => a.when.getTime() - b.when.getTime());
+  const planned = upcoming.slice(0, MAX_SCHEDULED);
 
-  for (const { sub, daysBefore, when, trial } of upcoming.slice(0, MAX_SCHEDULED)) {
+  // Same reminders as last time? Then there is nothing to do.
+  const signature = planned
+    .map((item) => `${item.sub.id}|${item.sub.name}|${item.sub.amount}|${item.daysBefore}|${item.when.getTime()}|${item.trial}`)
+    .join(";");
+  if (signature === lastReminderSignature) return;
+
+  await Notifications.cancelAllScheduledNotificationsAsync();
+
+  for (const { sub, daysBefore, when, trial } of planned) {
     const amount = money(Number(sub.amount), sub.currency);
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -193,6 +210,8 @@ async function rebuildReminders(subscriptions: Subscription[]) {
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: when },
     });
   }
+
+  lastReminderSignature = signature;
 }
 
 export async function removePushTokenFromServer(token: string) {

@@ -2,13 +2,13 @@
 import { BorderRadius, Typography } from "@/constants/theme";
 import React from "react";
 import {
-  ActivityIndicator,
   StyleSheet,
   Text,
   TextStyle,
   TouchableOpacity,
   ViewStyle,
 } from "react-native";
+import { LoadingDots } from "@/components/BrandLoader";
 import { useTheme } from "@/contexts/ThemeContext";
 
 interface ButtonProps {
@@ -46,7 +46,7 @@ export default function Button({
         activeOpacity={0.85}
       >
         {loading ? (
-          <ActivityIndicator color="#fff" />
+          <LoadingDots color="#FFFFFF" />
         ) : (
           <Text style={[styles.primaryText, textStyle]}>{title}</Text>
         )}
@@ -68,7 +68,7 @@ export default function Button({
       activeOpacity={0.8}
     >
       {loading ? (
-        <ActivityIndicator color={colors.text.secondary} />
+        <LoadingDots color={colors.text.secondary} />
       ) : (
         <Text
           style={[styles.secondaryText, { color: colors.text.secondary }, textStyle]}

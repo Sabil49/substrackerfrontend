@@ -1,9 +1,11 @@
 // app/(tabs)/index.tsx
+import BrandLoader from "@/components/BrandLoader";
 import Button from "@/components/Button";
 import ServiceIcon from "@/components/ServiceIcon";
 import { findServiceByName } from "@/constants/services";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage, Subscription, subscriptionsApi } from "@/services/api";
+import { dataCache, FRESH_MS } from "@/services/dataCache";
 import { syncLocalReminders } from "@/services/notifications";
 import { formatCurrency, formatShortDate, getDaysUntil } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,8 +13,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -37,31 +37,45 @@ function getMonthlyAmount(subscription: Subscription) {
 export default function HomeScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Show what we already know straight away (switching tabs feels instant),
+  // then refresh in the background if it is out of date.
+  const cached = dataCache.get<Subscription[]>("subscriptions");
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>(cached?.data ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadSubscriptions = useCallback(async () => {
+  const loadSubscriptions = useCallback(async (force = false) => {
+    const known = dataCache.get<Subscription[]>("subscriptions");
+    if (known) {
+      setSubscriptions(known.data);
+      setLoading(false);
+      if (!force && dataCache.isFresh("subscriptions", FRESH_MS)) {
+        setRefreshing(false);
+        return;
+      }
+    }
+
     try {
       setError(null);
       const data = await subscriptionsApi.getAll();
+      dataCache.set("subscriptions", data);
       setSubscriptions(data);
       // Keep the device's renewal reminders in step with the list.
       syncLocalReminders(data);
     } catch (err: any) {
       console.error("Failed to load subscriptions:", err);
-      const errorMessage = getFriendlyErrorMessage(
-        err,
-        "We couldn't load your subscriptions. Pull down to try again.",
-      );
-      setError(errorMessage);
-      if (!loading) Alert.alert("Couldn't Load Subscriptions", errorMessage);
+      // With something already on screen, a failed refresh stays quiet.
+      if (!known) {
+        setError(
+          getFriendlyErrorMessage(err, "We couldn't load your subscriptions. Pull down to try again."),
+        );
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -71,7 +85,7 @@ export default function HomeScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadSubscriptions();
+    loadSubscriptions(true);
   };
 
   const activeSubscriptions = useMemo(
@@ -137,7 +151,7 @@ export default function HomeScreen() {
         </Text>
         <TouchableOpacity style={styles.guardPill} onPress={openImport} activeOpacity={0.85}>
           <Ionicons name="layers-outline" size={16} color="#fff" />
-          <Text style={styles.guardPillText}>Scan a screenshot — free</Text>
+          <Text style={styles.guardPillText}>Scan a screenshot</Text>
         </TouchableOpacity>
       </LinearGradient>
     );
@@ -232,7 +246,7 @@ export default function HomeScreen() {
         Add your first subscription to start tracking recurring payments.
       </Text>
       <Button title="Add Subscription" onPress={() => router.push("/add-subscription")} style={styles.emptyButton} />
-      <Button title="Scan a screenshot — free" onPress={openImport} variant="secondary" style={styles.emptyButton} />
+      <Button title="Scan a screenshot" onPress={openImport} variant="secondary" style={styles.emptyButton} />
     </View>
   );
 
@@ -241,7 +255,7 @@ export default function HomeScreen() {
       <Ionicons name="warning-outline" size={56} color={colors.status.warning} />
       <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>Connection Error</Text>
       <Text style={[styles.emptyText, { color: colors.text.secondary }]}>{error || "We couldn't load your subscriptions. Please try again."}</Text>
-      <Button title="Retry" onPress={() => { setLoading(true); loadSubscriptions(); }} style={styles.emptyButton} />
+      <Button title="Retry" onPress={() => { setLoading(true); loadSubscriptions(true); }} style={styles.emptyButton} />
       <Button title="Add Subscription Anyway" onPress={() => router.push("/add-subscription")} variant="secondary" style={styles.emptyButton} />
     </View>
   );
@@ -263,7 +277,7 @@ export default function HomeScreen() {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.accent.primary} />
+            <BrandLoader />
           </View>
         ) : error && subscriptions.length === 0 ? (
           renderError()
