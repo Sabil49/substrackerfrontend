@@ -17,7 +17,7 @@
         "NSPhotoLibraryUsageDescription": "Substracker uses your photo library only when you choose a receipt or subscription screenshot to import.",
         "NSCameraUsageDescription": "Substracker uses your camera only when you choose to photograph a receipt or subscription screenshot to import."
       },
-      "buildNumber": "47"
+      "buildNumber": "49"
     },
     "android": {
       "package": "com.sabil.subscriptiontracker",
