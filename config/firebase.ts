@@ -7,49 +7,31 @@ import { initializeAuth, getReactNativePersistence, getAuth } from "firebase/aut
 import { getFunctions } from "firebase/functions";
 import { Platform } from "react-native";
 
-// IMPORTANT: Expo only inlines EXPO_PUBLIC_* values into release bundles when
-// they are written as static `process.env.EXPO_PUBLIC_X` member expressions.
-// Dynamic access (`process.env[key]`) works in dev but returns undefined in a
-// production build, which left apiKey empty and made Firebase Auth throw
-// `auth/invalid-api-key` at import time — an uncaught JS fatal that aborted
-// the app at launch. The fallbacks are public client identifiers (they ship
-// in every app binary), so they are safe to keep in source.
-const clean = (value: string | undefined, fallback: string) =>
-  value?.trim() || fallback;
-
+// IMPORTANT: these are hardcoded on purpose, not read from EXPO_PUBLIC_* env
+// vars. Two real incidents came from the env-var approach:
+//   1. Expo only inlines EXPO_PUBLIC_* values into release bundles when read
+//      as static `process.env.EXPO_PUBLIC_X` member expressions — dynamic
+//      access silently returned undefined in a release build, leaving apiKey
+//      empty and crashing the app at launch (auth/invalid-api-key).
+//   2. Worse: after moving to a new Expo/EAS account, that account's
+//      "production" environment had EXPO_PUBLIC_FIREBASE_* variables already
+//      set — to a *different, unrelated* Firebase project left over on the
+//      account. Because they were non-empty, the app quietly initialized
+//      against the wrong backend, breaking every sign-in method and every
+//      API call, with no error to point at.
+// These values are Firebase's public client config (safe to ship — they
+// identify the project, they don't authorize anything on their own; access is
+// enforced by Firestore/Storage rules and by requiring a signed-in user on
+// every Cloud Function). Hardcoding them means an EAS project or account
+// switch can never again silently repoint the app at someone else's backend.
 const firebaseConfig = {
-  apiKey: clean(
-    process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-    "AIzaSyDwL-MsUzBYWwEBdnzHjEc4E8Z4QKyMKwQ",
-  ),
-  authDomain: clean(
-    process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    "substracker-647d9.firebaseapp.com",
-  ),
-  projectId: clean(
-    process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-    "substracker-647d9",
-  ),
-  storageBucket: clean(
-    process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    "substracker-647d9.firebasestorage.app",
-  ),
-  messagingSenderId: clean(
-    process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    "976201476870",
-  ),
-  appId: clean(
-    process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
-    "1:976201476870:web:5f12083a18dfbd2a738c87",
-  ),
+  apiKey: "AIzaSyDwL-MsUzBYWwEBdnzHjEc4E8Z4QKyMKwQ",
+  authDomain: "substracker-647d9.firebaseapp.com",
+  projectId: "substracker-647d9",
+  storageBucket: "substracker-647d9.firebasestorage.app",
+  messagingSenderId: "976201476870",
+  appId: "1:976201476870:web:5f12083a18dfbd2a738c87",
 };
-
-if (!firebaseConfig.apiKey) {
-  console.warn(
-    "⚠️ Firebase web config is not set (EXPO_PUBLIC_FIREBASE_* env vars). " +
-      "Email/Google/Apple sign-in will not work until these are filled in.",
-  );
-}
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
@@ -67,12 +49,8 @@ try {
 
 export const auth = authInstance;
 export const functionsInstance = getFunctions(app);
-export const GOOGLE_WEB_CLIENT_ID = clean(
-  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  "976201476870-g120h031650t2lbu74gmf92fcv65pjdc.apps.googleusercontent.com",
-);
-export const GOOGLE_IOS_CLIENT_ID = clean(
-  process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-  "976201476870-eprci5h7q38ooru4ensavkqf3j5g4fop.apps.googleusercontent.com",
-);
+export const GOOGLE_WEB_CLIENT_ID =
+  "976201476870-g120h031650t2lbu74gmf92fcv65pjdc.apps.googleusercontent.com";
+export const GOOGLE_IOS_CLIENT_ID =
+  "976201476870-eprci5h7q38ooru4ensavkqf3j5g4fop.apps.googleusercontent.com";
 export const isAppleAuthAvailable = Platform.OS === "ios";
