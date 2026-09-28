@@ -1,4 +1,5 @@
 // app/subscription/[id].tsx
+import BrandLoader, { LoadingDots } from "@/components/BrandLoader";
 import Button from "@/components/Button";
 import ServiceIcon from "@/components/ServiceIcon";
 import { findServiceByName } from "@/constants/services";
@@ -38,6 +39,11 @@ export default function SubscriptionDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [markingReviewed, setMarkingReviewed] = useState(false);
+  const [loggingUsage, setLoggingUsage] = useState(false);
+  const [openingStorePage, setOpeningStorePage] = useState(false);
+  const [cancelingSubscription, setCancelingSubscription] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(0));
 
   const loadSubscription = useCallback(async () => {
@@ -69,27 +75,35 @@ export default function SubscriptionDetailScreen() {
   }, [subscription, fadeAnim]);
 
   const handleMarkReviewed = async () => {
-    if (!subscription || !id) return;
+    if (!subscription || !id || markingReviewed) return;
+    setMarkingReviewed(true);
     try {
       const updated = await subscriptionsApi.markReviewed(id);
       setSubscription(updated);
       Alert.alert("Marked as Reviewed", "Nice — we'll remind you to review it again later.");
     } catch {
       Alert.alert("Couldn't Save", "We couldn't mark this as reviewed. Please try again.");
+    } finally {
+      setMarkingReviewed(false);
     }
   };
   const handleLogUsage = async () => {
-    if (!subscription) return;
+    if (!subscription || loggingUsage) return;
+    setLoggingUsage(true);
     try {
       const updated = await subscriptionsApi.logUsage(id!);
       setSubscription(updated);
       Alert.alert("Usage Recorded", "Thanks! This helps show whether it's worth the price.");
     } catch {
       Alert.alert("Couldn't Save", "We couldn't record your usage. Please try again.");
+    } finally {
+      setLoggingUsage(false);
     }
   };
 
   const handleOpenCancelPage = async () => {
+    if (openingStorePage) return;
+    setOpeningStorePage(true);
     const storeUrl =
       Platform.OS === "ios" ? STORE_URLS.ios : STORE_URLS.android;
 
@@ -103,11 +117,14 @@ export default function SubscriptionDetailScreen() {
       }
     } catch {
       Alert.alert("Can't Open Page", "We couldn't open the store page. Please try again.");
+    } finally {
+      setOpeningStorePage(false);
     }
   };
 
   const handleCancelSubscription = async () => {
-    if (!subscription) return;
+    if (!subscription || cancelingSubscription) return;
+    setCancelingSubscription(true);
     try {
       const updated = await subscriptionsApi.cancel(id!, cancelReason);
       setSubscription(updated);
@@ -115,6 +132,8 @@ export default function SubscriptionDetailScreen() {
       Alert.alert("Marked as Canceled", "Remember to also cancel it with the store so you aren't charged.");
     } catch {
       Alert.alert("Couldn't Cancel", "We couldn't mark this subscription as canceled. Please try again.");
+    } finally {
+      setCancelingSubscription(false);
     }
   };
 
@@ -128,6 +147,7 @@ export default function SubscriptionDetailScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
+            setDeleting(true);
             try {
               await subscriptionsApi.delete(id!);
               // Always go to the list, not router.back(): after editing a
@@ -136,6 +156,7 @@ export default function SubscriptionDetailScreen() {
               // screen instead of returning the user to the dashboard.
               router.replace("/(tabs)");
             } catch {
+              setDeleting(false);
               Alert.alert("Couldn't Delete", "We couldn't delete this subscription. Please try again.");
             }
           },
@@ -195,9 +216,7 @@ export default function SubscriptionDetailScreen() {
         ]}
       >
         <View style={styles.loadingContainer}>
-          <Text style={[styles.loading, { color: colors.text.primary }]}>
-            Loading...
-          </Text>
+          <BrandLoader />
         </View>
       </SafeAreaView>
     );
@@ -226,8 +245,16 @@ export default function SubscriptionDetailScreen() {
               <Ionicons name="pencil-outline" size={20} color={colors.text.primary} />
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={handleDelete} style={styles.headerIconButton}>
-            <Ionicons name="trash-outline" size={20} color={colors.status.error} />
+          <TouchableOpacity
+            onPress={handleDelete}
+            disabled={deleting}
+            style={[styles.headerIconButton, deleting && { opacity: 0.4 }]}
+          >
+            {deleting ? (
+              <LoadingDots color={colors.status.error} />
+            ) : (
+              <Ionicons name="trash-outline" size={20} color={colors.status.error} />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -312,20 +339,34 @@ export default function SubscriptionDetailScreen() {
               <TouchableOpacity
                 style={[styles.actionButton, { backgroundColor: colors.background.card }]}
                 onPress={handleLogUsage}
+                disabled={loggingUsage}
                 activeOpacity={0.85}
               >
-                <Ionicons name="list-outline" size={17} color={colors.text.primary} />
-                <Text style={[styles.actionButtonText, { color: colors.text.primary }]}>Log usage</Text>
+                {loggingUsage ? (
+                  <LoadingDots color={colors.text.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="list-outline" size={17} color={colors.text.primary} />
+                    <Text style={[styles.actionButtonText, { color: colors.text.primary }]}>Log usage</Text>
+                  </>
+                )}
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionButton, { backgroundColor: `${colors.status.error}1A` }]}
                 onPress={handleOpenCancelPage}
+                disabled={openingStorePage}
                 activeOpacity={0.85}
               >
-                <Ionicons name="close-circle-outline" size={17} color={colors.status.error} />
-                <Text style={[styles.actionButtonText, { color: colors.status.error }]}>
-                  Cancel subscription
-                </Text>
+                {openingStorePage ? (
+                  <LoadingDots color={colors.status.error} />
+                ) : (
+                  <>
+                    <Ionicons name="close-circle-outline" size={17} color={colors.status.error} />
+                    <Text style={[styles.actionButtonText, { color: colors.status.error }]}>
+                      Cancel subscription
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           )}
@@ -360,8 +401,10 @@ export default function SubscriptionDetailScreen() {
                 Review it to confirm you still need it.
               </Text>
               <Button
-                title="✓ Mark as Reviewed"
+                title={markingReviewed ? "Saving..." : "✓ Mark as Reviewed"}
                 onPress={handleMarkReviewed}
+                loading={markingReviewed}
+                disabled={markingReviewed}
                 style={styles.alertButton}
               />
             </View>
@@ -489,8 +532,10 @@ export default function SubscriptionDetailScreen() {
                 </View>
 
                 <Button
-                  title="✓ Used Today"
+                  title={loggingUsage ? "Saving..." : "✓ Used Today"}
                   onPress={handleLogUsage}
+                  loading={loggingUsage}
+                  disabled={loggingUsage}
                   variant="secondary"
                   style={styles.usageButton}
                 />
@@ -529,8 +574,10 @@ export default function SubscriptionDetailScreen() {
                 Track usage to see if this subscription is worth the cost.
               </Text>
               <Button
-                title="✓ Used Today"
+                title={loggingUsage ? "Saving..." : "✓ Used Today"}
                 onPress={handleLogUsage}
+                loading={loggingUsage}
+                disabled={loggingUsage}
                 style={styles.usageButton}
               />
             </View>
@@ -572,8 +619,10 @@ export default function SubscriptionDetailScreen() {
               </Text>
 
               <Button
-                title={`Open ${Platform.OS === "ios" ? "App Store" : "Play Store"}`}
+                title={openingStorePage ? "Opening..." : `Open ${Platform.OS === "ios" ? "App Store" : "Play Store"}`}
                 onPress={handleOpenCancelPage}
+                loading={openingStorePage}
+                disabled={openingStorePage}
                 variant="secondary"
                 style={styles.cancelButton}
               />
@@ -677,6 +726,7 @@ export default function SubscriptionDetailScreen() {
                   { backgroundColor: colors.background.elevated },
                 ]}
                 onPress={() => setCancelModalVisible(false)}
+                disabled={cancelingSubscription}
               >
                 <Text
                   style={[
@@ -691,12 +741,18 @@ export default function SubscriptionDetailScreen() {
                 style={[
                   styles.modalButton,
                   { backgroundColor: colors.status.success },
+                  cancelingSubscription && { opacity: 0.7 },
                 ]}
                 onPress={handleCancelSubscription}
+                disabled={cancelingSubscription}
               >
-                <Text style={[styles.modalButtonText, { color: "#FFF" }]}>
-                  ✓ Mark Canceled
-                </Text>
+                {cancelingSubscription ? (
+                  <LoadingDots color="#FFFFFF" />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: "#FFF" }]}>
+                    ✓ Mark Canceled
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -740,9 +796,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-  loading: {
-    fontSize: 16,
   },
   summaryRow: {
     flexDirection: "row",

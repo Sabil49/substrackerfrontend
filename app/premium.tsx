@@ -16,6 +16,7 @@ import {
   restorePremiumFromStore,
   verifyPremiumPurchase,
 } from "@/services/premium";
+import { LoadingDots } from "@/components/BrandLoader";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Linking from "expo-linking";
@@ -591,9 +592,11 @@ export default function PremiumScreen() {
         )}
 
         <TouchableOpacity onPress={handleRestore} disabled={restoreLoading || loading} style={styles.restoreLink}>
-          <Text style={[styles.restoreLinkText, { color: colors.accent.primary }]}>
-            {restoreLoading ? "Restoring..." : "Restore Purchase"}
-          </Text>
+          {restoreLoading ? (
+            <LoadingDots color={colors.accent.primary} />
+          ) : (
+            <Text style={[styles.restoreLinkText, { color: colors.accent.primary }]}>Restore Purchase</Text>
+          )}
         </TouchableOpacity>
 
         <View style={{ alignItems: "center" }}>

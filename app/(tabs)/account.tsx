@@ -14,6 +14,7 @@ import {
 } from "@/services/notifications";
 import { restorePremiumFromStore } from "@/services/premium";
 import { hasOptedOutOfNotifications, setNotificationsOptOut } from "@/utils/storage";
+import { LoadingDots } from "@/components/BrandLoader";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
@@ -39,6 +40,7 @@ export default function AccountScreen() {
   const [user, setUser] = useState<User | null>(() => dataCache.get<User>("user")?.data ?? null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationsBusy, setNotificationsBusy] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
 
@@ -146,15 +148,23 @@ export default function AccountScreen() {
   };
 
   const handleSignOut = async () => {
-    const deviceToken = await AsyncStorage.getItem("deviceToken");
-    if (deviceToken) {
-      await removePushTokenFromServer(deviceToken).catch(() => {});
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+    try {
+      const deviceToken = await AsyncStorage.getItem("deviceToken");
+      if (deviceToken) {
+        await removePushTokenFromServer(deviceToken).catch(() => {});
+      }
+      await cancelAllScheduledNotifications().catch(() => {});
+      // No manual navigation here: the root layout sends signed-out users to
+      // /login. Navigating too made the login screen open twice.
+      await firebaseSignOut();
+      setUser(null);
+    } finally {
+      // Only reached if sign-out itself throws — a successful sign-out
+      // unmounts this screen (the login gate takes over) before this runs.
+      setIsSigningOut(false);
     }
-    await cancelAllScheduledNotifications().catch(() => {});
-    // No manual navigation here: the root layout sends signed-out users to
-    // /login. Navigating too made the login screen open twice.
-    await firebaseSignOut();
-    setUser(null);
   };
 
   const handleDeleteAccount = () => {
@@ -287,25 +297,33 @@ export default function AccountScreen() {
             <TouchableOpacity
               style={[styles.row, { borderTopColor: colors.border.light, borderTopWidth: 0 }]}
               onPress={handleSignOut}
-              disabled={isDeletingAccount}
+              disabled={isDeletingAccount || isSigningOut}
             >
-              <Text style={[styles.destructiveLabel, { color: colors.status.error }]}>Sign Out</Text>
+              {isSigningOut ? (
+                <LoadingDots color={colors.status.error} />
+              ) : (
+                <Text style={[styles.destructiveLabel, { color: colors.status.error }]}>Sign Out</Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.row, { borderTopColor: colors.border.light }]}
               onPress={handleDeleteAccount}
-              disabled={isDeletingAccount}
+              disabled={isDeletingAccount || isSigningOut}
             >
-              <Text style={[styles.destructiveLabel, { color: colors.status.error }]}>
-                {isDeletingAccount ? "Deleting..." : "Delete Account"}
-              </Text>
+              {isDeletingAccount ? (
+                <LoadingDots color={colors.status.error} />
+              ) : (
+                <Text style={[styles.destructiveLabel, { color: colors.status.error }]}>Delete Account</Text>
+              )}
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity onPress={handleRestorePurchase} disabled={isRestoring} style={styles.restoreLink}>
-            <Text style={[styles.restoreLinkText, { color: colors.accent.primary }]}>
-              {isRestoring ? "Restoring..." : "Restore Purchase"}
-            </Text>
+            {isRestoring ? (
+              <LoadingDots color={colors.accent.primary} />
+            ) : (
+              <Text style={[styles.restoreLinkText, { color: colors.accent.primary }]}>Restore Purchase</Text>
+            )}
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>

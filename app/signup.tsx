@@ -4,6 +4,7 @@ import { isAppleAuthAvailable } from "@/config/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage, isUserCancelledError } from "@/services/api";
+import { LoadingDots } from "@/components/BrandLoader";
 import { Ionicons } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { LinearGradient } from "expo-linear-gradient";
@@ -175,9 +176,11 @@ export default function SignupScreen() {
             disabled={loading !== null}
             activeOpacity={0.8}
           >
-            <Text style={[styles.oauthText, { color: colors.text.primary }]}>
-              {loading === "google" ? "Signing in…" : "Continue with Google"}
-            </Text>
+            {loading === "google" ? (
+              <LoadingDots color={colors.text.primary} />
+            ) : (
+              <Text style={[styles.oauthText, { color: colors.text.primary }]}>Continue with Google</Text>
+            )}
           </TouchableOpacity>
 
           {isAppleAuthAvailable && (
