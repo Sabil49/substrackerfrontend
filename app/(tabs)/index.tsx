@@ -270,9 +270,9 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.safeArea} edges={["top"]}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.text.primary }]}>Subscriptions</Text>
-          <View style={styles.headerIcon}>
-            <Ionicons name="cloud-outline" size={20} color={colors.text.secondary} />
-          </View>
+          <TouchableOpacity style={styles.headerIcon} onPress={openImport} activeOpacity={0.7}>
+            <Ionicons name="scan-outline" size={20} color={colors.text.secondary} />
+          </TouchableOpacity>
         </View>
 
         {loading ? (

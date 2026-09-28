@@ -500,6 +500,7 @@ export default function ImportSubscriptionScreen() {
               value={trialEndDate}
               onChangeText={setTrialEndDate}
               onClose={() => setTrialSheetOpen(false)}
+              minDate={new Date()}
             />
           </>
         )}

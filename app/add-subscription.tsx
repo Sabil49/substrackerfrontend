@@ -434,6 +434,7 @@ export default function AddSubscriptionScreen() {
         value={trialEndDate}
         onChangeText={setTrialEndDate}
         onClose={() => setTrialSheetOpen(false)}
+        minDate={new Date()}
       />
     </View>
   );

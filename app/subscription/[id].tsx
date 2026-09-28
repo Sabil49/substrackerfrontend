@@ -130,7 +130,11 @@ export default function SubscriptionDetailScreen() {
           onPress: async () => {
             try {
               await subscriptionsApi.delete(id!);
-              router.back();
+              // Always go to the list, not router.back(): after editing a
+              // subscription this screen is reached via router.replace(), so
+              // "back" could land on a stale copy of the now-deleted detail
+              // screen instead of returning the user to the dashboard.
+              router.replace("/(tabs)");
             } catch {
               Alert.alert("Couldn't Delete", "We couldn't delete this subscription. Please try again.");
             }

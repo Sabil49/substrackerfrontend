@@ -13,6 +13,7 @@ import {
   format,
   getDay,
   isSameDay,
+  startOfDay,
   startOfMonth,
   subMonths,
   subYears,
@@ -318,16 +319,22 @@ export function DateInputSheet({
   onChangeText,
   onClose,
   title = "Select date",
+  minDate,
 }: {
   visible: boolean;
   value: string;
   onChangeText: (value: string) => void;
   onClose: () => void;
   title?: string;
+  // Earliest day the user is allowed to pick (e.g. today, for a trial end
+  // date — a trial can't end before the day it's entered). Days before this
+  // are shown dimmed and can't be tapped. Omit to allow any date.
+  minDate?: Date;
 }) {
   const { colors } = useTheme();
   const selected = parseYmd(value);
   const [month, setMonth] = useState(() => startOfMonth(selected ?? new Date()));
+  const earliest = minDate ? startOfDay(minDate) : null;
 
   // Re-open on the currently selected month each time the sheet is shown.
   useEffect(() => {
@@ -385,11 +392,13 @@ export function DateInputSheet({
               if (!day) return <View key={`empty-${index}`} style={styles.calCell} />;
               const isSelected = selected ? isSameDay(day, selected) : false;
               const isToday = isSameDay(day, today);
+              const isDisabled = earliest ? day < earliest : false;
               return (
                 <TouchableOpacity
                   key={day.toISOString()}
                   style={styles.calCell}
-                  onPress={() => pick(day)}
+                  onPress={() => !isDisabled && pick(day)}
+                  disabled={isDisabled}
                   activeOpacity={0.6}
                 >
                   <View
@@ -402,7 +411,10 @@ export function DateInputSheet({
                     <Text
                       style={[
                         styles.calDayText,
-                        { color: isSelected ? "#FFFFFF" : colors.text.primary },
+                        {
+                          color: isSelected ? "#FFFFFF" : colors.text.primary,
+                          opacity: isDisabled ? 0.3 : 1,
+                        },
                       ]}
                     >
                       {day.getDate()}
@@ -414,9 +426,11 @@ export function DateInputSheet({
           </View>
 
           <View style={styles.calFooter}>
-            <TouchableOpacity onPress={() => pick(new Date())} style={styles.calFooterButton}>
-              <Text style={[styles.calFooterText, { color: colors.accent.primary }]}>Today</Text>
-            </TouchableOpacity>
+            {!(earliest && today < earliest) && (
+              <TouchableOpacity onPress={() => pick(new Date())} style={styles.calFooterButton}>
+                <Text style={[styles.calFooterText, { color: colors.accent.primary }]}>Today</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity onPress={onClose} style={styles.calFooterButton}>
               <Text style={[styles.calFooterText, { color: colors.text.secondary }]}>Cancel</Text>
             </TouchableOpacity>
