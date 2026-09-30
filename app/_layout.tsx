@@ -1,6 +1,7 @@
 // app/_layout.tsx
 import { LoadingScreen } from "@/components/BrandLoader";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { OnboardingProvider, useOnboarding } from "@/contexts/OnboardingContext";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { Subscription, subscriptionsApi, testApiConnectivity } from "@/services/api";
 import { dataCache } from "@/services/dataCache";
@@ -20,11 +21,12 @@ import { useEffect } from "react";
 export { ErrorBoundary } from "expo-router";
 
 // Routes reachable while signed out. Everything else requires auth.
-const PUBLIC_ROUTES = ["login", "signup", "forgot-password"];
+const PUBLIC_ROUTES = ["login", "signup", "forgot-password", "onboarding"];
 
 function RootLayoutContent() {
   const { colors } = useTheme();
   const { firebaseUser, initializing: authInitializing } = useAuth();
+  const { ready: onboardingReady, completed: onboardingCompleted } = useOnboarding();
   const segments = useSegments();
   const router = useRouter();
 
@@ -63,18 +65,21 @@ function RootLayoutContent() {
     return () => clearTimeout(timer);
   }, [firebaseUser]);
 
-  // Hard login gate: no guest browsing anywhere in the app.
+  // Hard login gate: no guest browsing anywhere in the app. First-time
+  // visitors see the intro screens before login.
   useEffect(() => {
-    if (authInitializing) return;
+    if (authInitializing || !onboardingReady) return;
     const onPublicRoute = PUBLIC_ROUTES.includes(segments[0] as string);
-    if (!firebaseUser && !onPublicRoute) {
+    if (!firebaseUser && !onboardingCompleted && segments[0] !== "onboarding") {
+      router.replace("/onboarding");
+    } else if (!firebaseUser && !onPublicRoute) {
       router.replace("/login");
     } else if (firebaseUser && onPublicRoute) {
       router.replace("/(tabs)");
     }
-  }, [authInitializing, firebaseUser, segments, router]);
+  }, [authInitializing, onboardingReady, onboardingCompleted, firebaseUser, segments, router]);
 
-  if (authInitializing) {
+  if (authInitializing || !onboardingReady) {
     return (
       <>
         <StatusBar style="light" />
@@ -96,6 +101,7 @@ function RootLayoutContent() {
         }}
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ animation: "fade" }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="subscription/[id]" />
         <Stack.Screen name="add-subscription" />
@@ -110,7 +116,9 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <RootLayoutContent />
+        <OnboardingProvider>
+          <RootLayoutContent />
+        </OnboardingProvider>
       </AuthProvider>
     </ThemeProvider>
   );

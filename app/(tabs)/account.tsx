@@ -7,6 +7,7 @@ import { dataCache, FRESH_MS } from "@/services/dataCache";
 import {
   cancelAllScheduledNotifications,
   checkNotificationPermissions,
+  forgetPremiumTrial,
   registerForPushNotifications,
   removePushTokenFromServer,
   requestNotificationPermission,
@@ -156,6 +157,7 @@ export default function AccountScreen() {
         await removePushTokenFromServer(deviceToken).catch(() => {});
       }
       await cancelAllScheduledNotifications().catch(() => {});
+      await forgetPremiumTrial().catch(() => {});
       // No manual navigation here: the root layout sends signed-out users to
       // /login. Navigating too made the login screen open twice.
       await firebaseSignOut();
@@ -185,6 +187,7 @@ export default function AccountScreen() {
                 await removePushTokenFromServer(deviceToken).catch(() => {});
               }
               await cancelAllScheduledNotifications().catch(() => {});
+              await forgetPremiumTrial().catch(() => {});
               await firebaseSignOut();
               setUser(null);
               Alert.alert("Account Deleted", "Your Substracker account was deleted.");

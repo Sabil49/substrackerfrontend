@@ -5,6 +5,9 @@ import { getFriendlyErrorMessage, isUserCancelledError, userApi } from "@/servic
 import {
   acquireIapConnection,
   clearStuckTransactions,
+  FreeTrialOffer,
+  getBasePlanOfferToken,
+  getFreeTrialOffer,
   getPremiumProductId,
   getPurchaseErrorMessage,
   isDuplicatePurchaseError,
@@ -14,8 +17,10 @@ import {
   refreshStoreState,
   releaseIapConnection,
   restorePremiumFromStore,
+  trialEndsAt,
   verifyPremiumPurchase,
 } from "@/services/premium";
+import { rememberPremiumTrial, requestNotificationPermission } from "@/services/notifications";
 import { LoadingDots } from "@/components/BrandLoader";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -24,8 +29,10 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -128,6 +135,11 @@ export default function PremiumScreen() {
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [storeProducts, setStoreProducts] = useState<any[]>([]);
   const [isPremium, setIsPremium] = useState(false);
+  // Free trials the store offers this account, per plan (set up in the stores).
+  const [trials, setTrials] = useState<Partial<Record<PlanId, FreeTrialOffer>>>({});
+  const [remindBeforeTrialEnds, setRemindBeforeTrialEnds] = useState(true);
+  // null until the account loads; someone who had Premium before gets no trial.
+  const [hadPremiumBefore, setHadPremiumBefore] = useState<boolean | null>(null);
 
   // What happened to the purchase the user just started. Refs, so the store's
   // listeners and the purchase routine always see the same live values.
@@ -135,6 +147,10 @@ export default function PremiumScreen() {
   const isPremiumRef = useRef(false);
   const celebrated = useRef(false);
   const lastAlertAt = useRef(0);
+  // The trial the current purchase starts, if any — for the reminder before it ends.
+  const purchasingTrial = useRef<{ trial: FreeTrialOffer; price: string; remind: boolean } | null>(null);
+  // The listener and the fallback check can both report the same purchase.
+  const purchaseHandled = useRef(false);
 
   // The store can report one failure more than one way; show only the first alert.
   const alertOnce = useCallback(
@@ -168,6 +184,35 @@ export default function PremiumScreen() {
     [markPremium],
   );
 
+  // A new purchase went through. If it started a free trial and the user kept
+  // "Remind me" on, schedule the reminder for the day before it becomes a charge.
+  const celebratePurchase = useCallback(async () => {
+    if (purchaseHandled.current) return;
+    purchaseHandled.current = true;
+    const started = purchasingTrial.current;
+    purchasingTrial.current = null;
+    if (!started) {
+      celebrate("Welcome to Premium", "Your subscription is active. Enjoy!");
+      return;
+    }
+
+    const enjoy = `Enjoy ${started.trial.days} days of Premium.`;
+    if (!started.remind) {
+      celebrate("Your Free Trial Has Started", enjoy);
+      return;
+    }
+    const allowed = await requestNotificationPermission().catch(() => false);
+    if (allowed) {
+      await rememberPremiumTrial({ endsAt: trialEndsAt(started.trial), price: started.price }).catch(() => {});
+      celebrate("Your Free Trial Has Started", `${enjoy} We'll remind you a day before your trial ends.`);
+    } else {
+      celebrate(
+        "Your Free Trial Has Started",
+        `${enjoy} Notifications are off, so we can't remind you before it ends — you can cancel anytime in your ${Platform.OS === "ios" ? "App Store" : "Google Play"} subscriptions.`,
+      );
+    }
+  }, [celebrate]);
+
   const handleRestore = useCallback(async () => {
     setRestoreLoading(true);
 
@@ -190,13 +235,34 @@ export default function PremiumScreen() {
       let active = true;
       userApi
         .get()
-        .then((user) => active && markPremium(user.isPro))
-        .catch(() => {});
+        .then((user) => {
+          if (!active) return;
+          markPremium(user.isPro);
+          setHadPremiumBefore(Boolean(user.proExpiresAt));
+        })
+        .catch(() => active && setHadPremiumBefore(false));
       return () => {
         active = false;
       };
     }, [markPremium]),
   );
+
+  useEffect(() => {
+    if (!storeProducts.length || hadPremiumBefore === null) return;
+    let active = true;
+    (async () => {
+      const found: Partial<Record<PlanId, FreeTrialOffer>> = {};
+      for (const plan of PRODUCTS) {
+        const storeProduct = storeProducts.find((item: any) => getStoreProductId(item) === plan.productId);
+        const trial = await getFreeTrialOffer(storeProduct, { hadPremiumBefore });
+        if (trial) found[plan.id] = trial;
+      }
+      if (active) setTrials(found);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [storeProducts, hadPremiumBefore]);
 
   useEffect(() => {
     let active = true;
@@ -236,7 +302,7 @@ export default function PremiumScreen() {
         await verifyPremiumPurchase(purchase);
         await finishPurchase(purchase);
         attempt.current.succeeded = true;
-        celebrate("Welcome to Premium", "Your subscription is active. Enjoy!");
+        celebratePurchase();
       } catch (e: any) {
         console.warn("Purchase verification failed:", e?.code, e?.message);
         if (isStaleTransactionError(e)) {
@@ -275,7 +341,7 @@ export default function PremiumScreen() {
       purchaseErrorSub.remove();
       if (acquired) releaseIapConnection();
     };
-  }, [celebrate]);
+  }, [celebratePurchase]);
 
   // Waits for the store's listeners to report how the purchase ended.
   const waitForOutcome = async (timeoutMs: number) => {
@@ -293,6 +359,13 @@ export default function PremiumScreen() {
 
   const startPurchase = async (plan: (typeof PRODUCTS)[number], storeProduct: any) => {
     attempt.current = freshAttempt();
+    const trial = trials[plan.id];
+    purchasingTrial.current = trial
+      ? { trial, price: `${getDisplayedPrice(plan)}${plan.period}`, remind: remindBeforeTrialEnds }
+      : null;
+    // Google Play takes exactly one offer: the trial when there is one,
+    // otherwise the plain base plan.
+    const offerToken = trial?.offerToken ?? getBasePlanOfferToken(storeProduct);
 
     await (RNIap as any).requestPurchase({
       request: {
@@ -301,11 +374,7 @@ export default function PremiumScreen() {
         },
         google: {
           skus: [plan.productId],
-          subscriptionOffers:
-            storeProduct.subscriptionOfferDetailsAndroid?.map((offer: any) => ({
-              sku: plan.productId,
-              offerToken: offer.offerToken,
-            })) || [],
+          subscriptionOffers: offerToken ? [{ sku: plan.productId, offerToken }] : [],
         },
       },
       type: "subs",
@@ -318,6 +387,7 @@ export default function PremiumScreen() {
     if (loading) return;
     setLoading(true);
     celebrated.current = false;
+    purchaseHandled.current = false;
 
     try {
       const plan = PRODUCTS.find((p) => p.id === selectedPlan);
@@ -376,7 +446,7 @@ export default function PremiumScreen() {
         //    confirmation was missed.
         try {
           await restorePremiumFromStore();
-          celebrate("Welcome to Premium", "Your subscription is active. Enjoy!");
+          celebratePurchase();
           return;
         } catch {
           // fall through to the message below
@@ -408,6 +478,10 @@ export default function PremiumScreen() {
           );
         }
       } finally {
+        // The purchase didn't go through: a purchase the store delivers later
+        // must not be taken for this trial.
+        const a = attempt.current;
+        if (a.cancelled || a.failure || !a.eventSeen) purchasingTrial.current = null;
         await releaseIapConnection();
       }
     } catch (error: any) {
@@ -436,6 +510,9 @@ export default function PremiumScreen() {
       plan.price
     );
   };
+
+  const selectedProduct = PRODUCTS.find((p) => p.id === selectedPlan) ?? PRODUCTS[1];
+  const selectedTrial = trials[selectedPlan];
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background.primary }]}>
@@ -512,7 +589,13 @@ export default function PremiumScreen() {
                     {plan.name}
                   </Text>
 
-                  {"savings" in plan && plan.savings && (
+                  {trials[plan.id] ? (
+                    <Text
+                      style={[styles.savings, { color: colors.status.success }]}
+                    >
+                      {trials[plan.id]!.days}-day free trial
+                    </Text>
+                  ) : "savings" in plan && plan.savings && (
                     <Text
                       style={[styles.savings, { color: colors.status.success }]}
                     >
@@ -581,9 +664,44 @@ export default function PremiumScreen() {
           ))}
         </View>
 
+        {!isPremium && selectedTrial && (
+          <View style={[styles.reminderRow, { backgroundColor: colors.background.card, borderColor: colors.border.default }]}>
+            <Ionicons name="notifications-outline" size={20} color={colors.accent.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.featureTitle, { color: colors.text.primary }]}>
+                Remind me before my trial ends
+              </Text>
+              <Text style={[styles.featureDescription, { color: colors.text.secondary }]}>
+                We&apos;ll notify you 1 day before you&apos;re charged
+              </Text>
+            </View>
+            <Switch
+              value={remindBeforeTrialEnds}
+              onValueChange={setRemindBeforeTrialEnds}
+              trackColor={{ false: colors.background.elevated, true: colors.accent.primary }}
+              thumbColor="#FFF"
+            />
+          </View>
+        )}
+
+        {!isPremium && selectedTrial && (
+          <Text style={[styles.trialTerms, { color: colors.text.secondary }]}>
+            Free for {selectedTrial.days} days, then {getDisplayedPrice(selectedProduct)}
+            {selectedProduct.period}. Cancel anytime in your{" "}
+            {Platform.OS === "ios" ? "App Store" : "Google Play"} subscriptions at least 24 hours
+            before the trial ends and you won{"'"}t be charged.
+          </Text>
+        )}
+
         {!isPremium && (
           <Button
-            title={loading ? "Processing..." : "Get Premium"}
+            title={
+              loading
+                ? "Processing..."
+                : selectedTrial
+                  ? `Start ${selectedTrial.days}-Day Free Trial`
+                  : "Get Premium"
+            }
             onPress={handleUpgrade}
             disabled={loading || restoreLoading}
             loading={loading}
@@ -759,6 +877,16 @@ const styles = StyleSheet.create({
   restoreLink: { alignItems: "center", paddingVertical: 6, marginBottom: 24 },
   restoreLinkText: { fontSize: 14, fontWeight: "700" },
   terms: { fontSize: 12, textAlign: "center", lineHeight: 18 },
+  reminderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 16,
+  },
+  trialTerms: { fontSize: 13, fontWeight: "500", textAlign: "center", lineHeight: 19, marginTop: 12 },
 });
 
 

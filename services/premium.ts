@@ -142,6 +142,75 @@ export function getPremiumPlanId(purchase: any): PremiumPlanId {
     : "yearly";
 }
 
+// --- Free trial -------------------------------------------------------------
+// The trial itself is set up in the stores (App Store Connect / Play Console),
+// not here. The app only reads it from the store product: a plan shows a trial
+// when the store offers one and this account can still use it.
+export type FreeTrialOffer = { days: number; offerToken?: string };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+export const trialEndsAt = (trial: FreeTrialOffer, from = Date.now()) => from + trial.days * DAY_MS;
+
+const UNIT_DAYS: Record<string, number> = { D: 1, W: 7, M: 30, Y: 365, day: 1, week: 7, month: 30, year: 365 };
+
+// Google writes periods as ISO 8601 durations, e.g. "P3D" or "P1W".
+function isoPeriodDays(period?: string) {
+  const match = /^P(\d+)([DWMY])$/.exec(period ?? "");
+  return match ? Number(match[1]) * UNIT_DAYS[match[2]] : 0;
+}
+
+// `hadPremiumBefore` (from our own account records) stands in for Apple's
+// eligibility check when the store doesn't give us the subscription group.
+export async function getFreeTrialOffer(
+  storeProduct: any,
+  { hadPremiumBefore }: { hadPremiumBefore: boolean },
+): Promise<FreeTrialOffer | null> {
+  if (!storeProduct) return null;
+
+  if (Platform.OS === "android") {
+    // Google Play only lists offers this account is still eligible for.
+    for (const offer of storeProduct.subscriptionOfferDetailsAndroid ?? []) {
+      const firstPhase = offer.pricingPhases?.pricingPhaseList?.[0];
+      if (!offer.offerId || !firstPhase || Number(firstPhase.priceAmountMicros) !== 0) continue;
+      const days = isoPeriodDays(firstPhase.billingPeriod) * (firstPhase.billingCycleCount || 1);
+      if (days > 0) return { days, offerToken: offer.offerToken };
+    }
+    return null;
+  }
+
+  const intro = (storeProduct.subscriptionOffers ?? []).find(
+    (offer: any) => offer?.type === "introductory" && offer?.paymentMode === "free-trial",
+  );
+  let days = intro
+    ? (UNIT_DAYS[intro.period?.unit] ?? 0) * (intro.period?.value || 1) * (intro.periodCount || 1)
+    : 0;
+  if (!days && storeProduct.introductoryPricePaymentModeIOS === "free-trial") {
+    // Older fields carry only the unit, not the count of units — exact for a
+    // "1 week" trial, which is what App Store Connect is set to.
+    days =
+      (UNIT_DAYS[storeProduct.introductoryPriceSubscriptionPeriodIOS] ?? 0) *
+      (Number(storeProduct.introductoryPriceNumberOfPeriodsIOS) || 1);
+  }
+  if (!days) return null;
+
+  // Apple allows one introductory offer per account per subscription group.
+  const groupId = storeProduct.subscriptionInfoIOS?.subscriptionGroupId ?? storeProduct.subscriptionGroupIdIOS;
+  if (groupId) {
+    try {
+      return (await RNIap.isEligibleForIntroOfferIOS(groupId)) ? { days } : null;
+    } catch {
+      // fall back to our own records below
+    }
+  }
+  return hadPremiumBefore ? null : { days };
+}
+
+// The plain base-plan offer on Android (no trial or discount attached).
+export function getBasePlanOfferToken(storeProduct: any): string | undefined {
+  const offers: any[] = storeProduct?.subscriptionOfferDetailsAndroid ?? [];
+  return (offers.find((offer) => !offer.offerId) ?? offers[0])?.offerToken;
+}
+
 function getStoreToken(purchase: any) {
   return purchase?.purchaseToken || purchase?.purchaseTokenAndroid;
 }
