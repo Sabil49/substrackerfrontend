@@ -2,7 +2,7 @@
   "expo": {
     "name": "Substracker",
     "slug": "substracker-myzoapp",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "substracker",
@@ -17,7 +17,7 @@
         "NSPhotoLibraryUsageDescription": "Substracker uses your photo library only when you choose a receipt or subscription screenshot to import.",
         "NSCameraUsageDescription": "Substracker uses your camera only when you choose to photograph a receipt or subscription screenshot to import."
       },
-      "buildNumber": "49"
+      "buildNumber": "50"
     },
     "android": {
       "package": "com.sabil.subscriptiontracker",
