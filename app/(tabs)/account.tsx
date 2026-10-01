@@ -13,7 +13,7 @@ import {
   requestNotificationPermission,
   syncLocalReminders,
 } from "@/services/notifications";
-import { restorePremiumFromStore } from "@/services/premium";
+import { openManageSubscriptions, restorePremiumFromStore } from "@/services/premium";
 import { hasOptedOutOfNotifications, resetAppTour, setNotificationsOptOut } from "@/utils/storage";
 import { LoadingDots } from "@/components/BrandLoader";
 import { Ionicons } from "@expo/vector-icons";
@@ -44,6 +44,7 @@ export default function AccountScreen() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isOpeningManage, setIsOpeningManage] = useState(false);
 
   // "On" means the device allows notifications AND the user hasn't switched
   // reminders off in the app. Reminders are scheduled on the device itself, so
@@ -138,6 +139,25 @@ export default function AccountScreen() {
   const handleReplayTour = async () => {
     await resetAppTour().catch(() => {});
     router.navigate("/(tabs)");
+  };
+
+  // Change plan or cancel — opens Apple's / Google's own subscription screen.
+  const handleManageSubscription = async () => {
+    if (isOpeningManage) return;
+    setIsOpeningManage(true);
+    try {
+      await openManageSubscriptions();
+    } catch {
+      Alert.alert(
+        "Can't Open Subscriptions",
+        "We couldn't open your subscription settings. Please try again.",
+      );
+    } finally {
+      setIsOpeningManage(false);
+      // The plan may have changed while the sheet was open.
+      dataCache.markStale("user");
+      loadUser();
+    }
   };
 
   const handleRestorePurchase = async () => {
@@ -268,6 +288,30 @@ export default function AccountScreen() {
               </TouchableOpacity>
             )}
           </View>
+
+          {user?.isPro && (
+            <>
+              <Text style={[styles.sectionLabel, { color: colors.text.muted }]}>PREMIUM</Text>
+              <View style={[styles.card, { backgroundColor: colors.background.card }]}>
+                <TouchableOpacity
+                  style={[styles.row, { borderTopColor: colors.border.light, borderTopWidth: 0 }]}
+                  onPress={handleManageSubscription}
+                  disabled={isOpeningManage}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    <Text style={[styles.rowLabel, { color: colors.text.secondary }]}>Manage subscription</Text>
+                    <Text style={[styles.rowHint, { color: colors.text.muted }]}>Change your plan or cancel</Text>
+                  </View>
+                  {isOpeningManage ? (
+                    <LoadingDots color={colors.text.muted} />
+                  ) : (
+                    <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
 
           <Text style={[styles.sectionLabel, { color: colors.text.muted }]}>NOTIFICATIONS</Text>
           <View style={[styles.card, { backgroundColor: colors.background.card }]}>

@@ -2,7 +2,7 @@ import { functionsInstance } from "@/config/firebase";
 import { getFriendlyErrorMessage } from "@/services/api";
 import { dataCache } from "@/services/dataCache";
 import { httpsCallable } from "firebase/functions";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 import * as RNIap from "react-native-iap";
 
 export const PREMIUM_PRODUCT_IDS = Platform.OS === 'android'
@@ -353,4 +353,30 @@ export async function syncPremiumEntitlement() {
     console.log("Premium entitlement sync skipped:", error);
     return false;
   }
+}
+
+// --- Manage subscription ----------------------------------------------------
+// iOS: Apple's own "manage subscription" sheet, shown inside the app. It also
+// lists TestFlight test subscriptions, which never appear in iOS Settings.
+// Android: the Google Play subscriptions page. Falls back to the store's
+// subscriptions page if the sheet can't be shown.
+export async function openManageSubscriptions() {
+  if (Platform.OS === "ios") {
+    let acquired = false;
+    try {
+      await acquireIapConnection();
+      acquired = true;
+      await RNIap.showManageSubscriptionsIOS();
+      return;
+    } catch (error) {
+      console.log("[premium] manage-subscriptions sheet unavailable:", error);
+    } finally {
+      if (acquired) await releaseIapConnection();
+    }
+    await Linking.openURL("https://apps.apple.com/account/subscriptions");
+    return;
+  }
+  await Linking.openURL(
+    "https://play.google.com/store/account/subscriptions?package=com.sabil.subscriptiontracker",
+  );
 }
