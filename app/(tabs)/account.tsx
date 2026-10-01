@@ -14,7 +14,7 @@ import {
   syncLocalReminders,
 } from "@/services/notifications";
 import { restorePremiumFromStore } from "@/services/premium";
-import { hasOptedOutOfNotifications, setNotificationsOptOut } from "@/utils/storage";
+import { hasOptedOutOfNotifications, resetAppTour, setNotificationsOptOut } from "@/utils/storage";
 import { LoadingDots } from "@/components/BrandLoader";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -130,6 +130,12 @@ export default function AccountScreen() {
   };
 
   const handleOpenSystemSettings = () => Linking.openSettings();
+
+  // Replays the first-run tour: the dashboard shows it as soon as it opens.
+  const handleReplayTour = async () => {
+    await resetAppTour().catch(() => {});
+    router.navigate("/(tabs)");
+  };
 
   const handleRestorePurchase = async () => {
     setIsRestoring(true);
@@ -288,7 +294,15 @@ export default function AccountScreen() {
 
           <Text style={[styles.sectionLabel, { color: colors.text.muted }]}>ABOUT</Text>
           <View style={[styles.card, { backgroundColor: colors.background.card }]}>
-            <View style={[styles.row, { borderTopColor: colors.border.light, borderTopWidth: 0 }]}>
+            <TouchableOpacity
+              style={[styles.row, { borderTopColor: colors.border.light, borderTopWidth: 0 }]}
+              onPress={handleReplayTour}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.rowLabel, { color: colors.text.secondary }]}>App tour</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
+            </TouchableOpacity>
+            <View style={[styles.row, { borderTopColor: colors.border.light }]}>
               <Text style={[styles.rowLabel, { color: colors.text.secondary }]}>Version</Text>
               <Text style={[styles.rowValue, { color: colors.text.primary }]}>
                 {Constants.expoConfig?.version ?? "—"}

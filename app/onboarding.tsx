@@ -33,11 +33,8 @@ const SLIDES = [
     text: "Get a reminder before a subscription renews or a free trial turns into a charge, so you can cancel in time.",
     asksForNotifications: true,
   },
-  {
-    icon: "flash-outline",
-    title: "Add one in seconds",
-    text: "Pick from popular services like Netflix and Spotify, or scan a screenshot of a receipt.",
-  },
+  // "How to add a subscription / scan a receipt" is taught after sign-in by the
+  // arrow tour on the dashboard, which points at the real buttons.
 ] as const;
 
 type ReminderState = "idle" | "asking" | "on" | "off";

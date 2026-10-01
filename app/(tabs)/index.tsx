@@ -1,6 +1,7 @@
 // app/(tabs)/index.tsx
 import BrandLoader from "@/components/BrandLoader";
 import Button from "@/components/Button";
+import CoachMarks, { CoachStep } from "@/components/CoachMarks";
 import ServiceIcon from "@/components/ServiceIcon";
 import { findServiceByName } from "@/constants/services";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -8,19 +9,21 @@ import { getFriendlyErrorMessage, Subscription, subscriptionsApi } from "@/servi
 import { dataCache, FRESH_MS } from "@/services/dataCache";
 import { syncLocalReminders } from "@/services/notifications";
 import { formatCurrency, formatShortDate, getDaysUntil } from "@/utils/date";
+import { isAppTourCompleted, setAppTourCompleted } from "@/utils/storage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 function getMonthlyAmount(subscription: Subscription) {
   const amount = Number(subscription.amount) || 0;
@@ -128,6 +131,80 @@ export default function HomeScreen() {
   );
 
   const openImport = () => router.push("/import-subscription");
+
+  // --- First-run tour -------------------------------------------------------
+  // The second half of onboarding: the intro screens run before sign-in, when
+  // these buttons don't exist yet. This tour runs once after the first sign-in
+  // (and again from Settings → App tour) and points at the real controls.
+  const fabRef = useRef<View>(null);
+  const scanRef = useRef<View>(null);
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const [tourVisible, setTourVisible] = useState(false);
+
+  const tourSteps = useMemo<CoachStep[]>(() => {
+    // The tab bar is 62pt tall plus the home-indicator inset, split into
+    // three equal tabs (Home, Statistics, Settings).
+    const tabArea = (tab: number) => () => {
+      const tabWidth = windowWidth / 3;
+      const barTop = windowHeight - (62 + insets.bottom);
+      return { x: tabWidth * tab + tabWidth * 0.15, y: barTop + 4, width: tabWidth * 0.7, height: 54 };
+    };
+    return [
+      {
+        title: "Add a subscription",
+        body: "Tap + to add one. Pick a popular service like Netflix or Spotify, or type your own.",
+        icon: "add-circle-outline",
+        target: fabRef,
+        radius: 38,
+      },
+      {
+        title: "Scan a receipt",
+        body: "Tap here to add a subscription from a screenshot or a photo of a receipt. We fill in the details for you. (Premium)",
+        icon: "scan-outline",
+        target: scanRef,
+        radius: 28,
+      },
+      {
+        title: "See your spending",
+        body: "Statistics shows your monthly and yearly totals, spending by category, and upcoming charges. (Premium)",
+        icon: "stats-chart-outline",
+        rect: tabArea(1),
+      },
+      {
+        title: "Reminders & Premium",
+        body: "In Settings you can turn renewal reminders on or off, upgrade to Premium, and restore purchases.",
+        icon: "settings-outline",
+        rect: tabArea(2),
+      },
+    ];
+  }, [windowWidth, windowHeight, insets.bottom]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (loading) return;
+      let cancelled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      isAppTourCompleted()
+        .then((done) => {
+          if (cancelled || done) return;
+          // Give the screen a moment to finish laying out so the tour can find its buttons.
+          timer = setTimeout(() => {
+            if (!cancelled) setTourVisible(true);
+          }, 450);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+        if (timer) clearTimeout(timer);
+      };
+    }, [loading]),
+  );
+
+  const finishTour = useCallback(() => {
+    setTourVisible(false);
+    setAppTourCompleted().catch(() => {});
+  }, []);
 
   const renderTrialGuard = () => {
     if (trialEndingSoon.length === 0) return null;
@@ -270,9 +347,11 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.safeArea} edges={["top"]}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.text.primary }]}>Subscriptions</Text>
-          <TouchableOpacity style={styles.headerIcon} onPress={openImport} activeOpacity={0.7}>
-            <Ionicons name="scan-outline" size={20} color={colors.text.secondary} />
-          </TouchableOpacity>
+          <View ref={scanRef} collapsable={false}>
+            <TouchableOpacity style={styles.headerIcon} onPress={openImport} activeOpacity={0.7}>
+              <Ionicons name="scan-outline" size={20} color={colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {loading ? (
@@ -292,8 +371,8 @@ export default function HomeScreen() {
           />
         )}
 
-        {activeSubscriptions.length > 0 && (
-          <View style={styles.fabContainer}>
+        {!loading && (
+          <View ref={fabRef} collapsable={false} style={styles.fabContainer}>
             <TouchableOpacity
               style={[styles.fab, { backgroundColor: colors.accent.primary }]}
               onPress={() => router.push("/add-subscription")}
@@ -304,6 +383,8 @@ export default function HomeScreen() {
           </View>
         )}
       </SafeAreaView>
+
+      <CoachMarks visible={tourVisible} steps={tourSteps} onDone={finishTour} />
     </View>
   );
 }

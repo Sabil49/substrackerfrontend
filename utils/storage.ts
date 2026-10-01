@@ -7,6 +7,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export const STORAGE_KEYS = {
   DEVICE_TOKEN: "deviceToken",
   ONBOARDING_COMPLETED: "onboardingCompleted",
+  // Separate from the pre-login intro screens above: this is the arrow tour on
+  // the dashboard that runs after the first sign-in.
+  APP_TOUR_COMPLETED: "appTourCompleted",
   NOTIFICATION_PERMISSION_ASKED: "notificationPermissionAsked",
 };
 
@@ -49,4 +52,17 @@ export async function wasNotificationPermissionAsked(): Promise<boolean> {
     STORAGE_KEYS.NOTIFICATION_PERMISSION_ASKED,
   );
   return asked === "true";
+}
+
+export async function setAppTourCompleted() {
+  await AsyncStorage.setItem(STORAGE_KEYS.APP_TOUR_COMPLETED, "true");
+}
+
+export async function isAppTourCompleted(): Promise<boolean> {
+  return (await AsyncStorage.getItem(STORAGE_KEYS.APP_TOUR_COMPLETED)) === "true";
+}
+
+// Settings → App tour: the dashboard shows the tour again the next time it opens.
+export async function resetAppTour() {
+  await AsyncStorage.removeItem(STORAGE_KEYS.APP_TOUR_COMPLETED);
 }
