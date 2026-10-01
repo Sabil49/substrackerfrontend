@@ -2,7 +2,7 @@
 // Merged Profile + Settings into one Account screen, matching Account.png.
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { getFriendlyErrorMessage, subscriptionsApi, User, userApi } from "@/services/api";
+import { getFriendlyErrorMessage, Subscription, subscriptionsApi, User, userApi } from "@/services/api";
 import { dataCache, FRESH_MS } from "@/services/dataCache";
 import {
   cancelAllScheduledNotifications,
@@ -112,7 +112,10 @@ export default function AccountScreen() {
         }
       } else {
         await setNotificationsOptOut(true);
-        await cancelAllScheduledNotifications().catch(() => {});
+        // Rebuild instead of cancelling everything: with the opt-out saved this
+        // drops all renewal reminders but keeps the Premium free-trial reminder
+        // the user asked for on the paywall.
+        await syncLocalReminders(dataCache.get<Subscription[]>("subscriptions")?.data ?? []);
         const token = await AsyncStorage.getItem("deviceToken");
         if (token) await removePushTokenFromServer(token).catch(() => {});
       }
