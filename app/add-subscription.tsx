@@ -17,9 +17,10 @@ import {
 } from "@/components/FormRow";
 import ServiceIcon from "@/components/ServiceIcon";
 import { filterServices, findServiceByName, PopularService } from "@/constants/services";
-import { BillingCycles, Categories, NotificationOptions } from "@/constants/theme";
+import { BillingCycles, Categories, normalizeCategory, NotificationOptions } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getFriendlyErrorMessage, subscriptionsApi } from "@/services/api";
+import { formatCurrency } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -28,6 +29,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -92,6 +94,9 @@ export default function AddSubscriptionScreen() {
   const [notifyDays, setNotifyDays] = useState<number[]>(DEFAULT_REMINDERS);
   const [notes, setNotes] = useState("");
   const [showMore, setShowMore] = useState(false);
+  // Prices are always in $. An older subscription saved in another currency
+  // shows its original price here so the user can enter the $ amount once.
+  const [foreignPrice, setForeignPrice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [dateSheetOpen, setDateSheetOpen] = useState(false);
@@ -99,6 +104,9 @@ export default function AddSubscriptionScreen() {
 
   const scrollRef = useRef<ScrollView>(null);
   const nameRef = useRef<TextInput>(null);
+  const priceRef = useRef<TextInput>(null);
+  // Which text box is being typed in — its border lights up so it's obvious.
+  const [focused, setFocused] = useState<"name" | "price" | "days" | null>(null);
 
   useEffect(() => {
     if (!isEditMode) return;
@@ -107,10 +115,16 @@ export default function AddSubscriptionScreen() {
       try {
         const subscription = await subscriptionsApi.getOne(id!);
         setName(subscription.name);
-        setAmount(String(subscription.amount));
+        const savedCurrency = (subscription.currency || "USD").toUpperCase();
+        if (savedCurrency === "USD") {
+          setAmount(String(subscription.amount));
+        } else {
+          setForeignPrice(formatCurrency(Number(subscription.amount), savedCurrency));
+          setAmount("");
+        }
         setBillingCycle(subscription.billingCycle.toLowerCase());
         if (subscription.customCycleDays) setCustomDays(String(subscription.customCycleDays));
-        setCategory((subscription.category || "").toLowerCase());
+        setCategory(normalizeCategory(subscription.category));
         setStartDate(subscription.startDate.slice(0, 10));
         setIsTrial(Boolean(subscription.isTrial));
         setTrialEndDate(subscription.trialEndDate ? subscription.trialEndDate.slice(0, 10) : "");
@@ -144,8 +158,9 @@ export default function AddSubscriptionScreen() {
     setCategory("");
     setBillingCycle("monthly");
     setStep("details");
-    // No name yet: put the cursor straight in the name box.
-    if (!typed) setTimeout(() => nameRef.current?.focus(), 300);
+    // Put the cursor where they need to type next: the name, or (if they
+    // already typed one in search) the price.
+    setTimeout(() => (typed ? priceRef : nameRef).current?.focus(), 350);
   };
 
   // ---- Step 2: validation -------------------------------------------------
@@ -283,6 +298,8 @@ export default function AddSubscriptionScreen() {
           onChangeText={setQuery}
           placeholder="Search Netflix, Spotify, iCloud…"
           placeholderTextColor={colors.text.muted}
+          selectionColor={colors.accent.primary}
+          cursorColor={colors.accent.primary}
           style={[styles.searchInput, { color: colors.text.primary }]}
           autoCorrect={false}
           returnKeyType="next"
@@ -351,19 +368,8 @@ export default function AddSubscriptionScreen() {
           name={name.trim() || "?"}
           domain={service?.domain}
           color={service?.color ?? colors.accent.secondary}
-          size={64}
+          size={56}
         />
-        <TextInput
-          ref={nameRef}
-          value={name}
-          onChangeText={setName}
-          placeholder="Subscription name"
-          placeholderTextColor={colors.text.muted}
-          style={[styles.nameInput, { color: colors.text.primary }]}
-          textAlign="center"
-          returnKeyType="done"
-        />
-        {errors.name ? <Text style={[styles.error, { color: colors.status.error }]}>{errors.name}</Text> : null}
         {!isEditMode && (
           <TouchableOpacity onPress={() => setStep("pick")} hitSlop={8}>
             <Text style={[styles.changeLink, { color: colors.accent.primary }]}>Change service</Text>
@@ -371,25 +377,91 @@ export default function AddSubscriptionScreen() {
         )}
       </View>
 
+      <View style={styles.field}>
+        <Text style={[styles.fieldLabel, { color: colors.text.secondary }]}>Subscription name</Text>
+        <Pressable
+          onPress={() => nameRef.current?.focus()}
+          style={[
+            styles.inputBox,
+            {
+              backgroundColor: colors.background.card,
+              borderColor: errors.name
+                ? colors.status.error
+                : focused === "name"
+                  ? colors.accent.primary
+                  : colors.border.default,
+            },
+          ]}
+        >
+          <TextInput
+            ref={nameRef}
+            value={name}
+            onChangeText={setName}
+            onFocus={() => setFocused("name")}
+            onBlur={() => setFocused(null)}
+            placeholder="e.g. Netflix, gym, phone plan"
+            placeholderTextColor={colors.text.muted}
+            selectionColor={colors.accent.primary}
+            cursorColor={colors.accent.primary}
+            autoCapitalize="words"
+            returnKeyType="next"
+            onSubmitEditing={() => priceRef.current?.focus()}
+            style={[styles.nameInput, { color: colors.text.primary }]}
+          />
+        </Pressable>
+        {errors.name ? (
+          <Text style={[styles.fieldError, { color: colors.status.error }]}>{errors.name}</Text>
+        ) : null}
+      </View>
+
       {/* How much and how often */}
       <RowCard style={styles.priceCard}>
-        <Text style={[styles.cardLabel, { color: colors.text.muted }]}>YOU PAY</Text>
-        <View style={styles.priceRow}>
+        <Text style={[styles.fieldLabel, { color: colors.text.secondary }]}>Price</Text>
+        {foreignPrice ? (
+          <View style={[styles.foreignNote, { backgroundColor: `${colors.status.warning}1F` }]}>
+            <Ionicons name="information-circle-outline" size={16} color={colors.status.warning} />
+            <Text style={[styles.foreignNoteText, { color: colors.text.primary }]}>
+              This was saved as {foreignPrice}. Enter the price in $.
+            </Text>
+          </View>
+        ) : null}
+        <Pressable
+          onPress={() => priceRef.current?.focus()}
+          style={[
+            styles.priceBox,
+            {
+              backgroundColor: colors.background.elevated,
+              borderColor: errors.amount
+                ? colors.status.error
+                : focused === "price"
+                  ? colors.accent.primary
+                  : colors.border.default,
+            },
+          ]}
+        >
           <Text style={[styles.currency, { color: colors.text.secondary }]}>$</Text>
           <TextInput
+            ref={priceRef}
             value={amount}
             onChangeText={(text) => setAmount(text.replace(",", "."))}
+            onFocus={() => setFocused("price")}
+            onBlur={() => setFocused(null)}
             placeholder="0.00"
-            placeholderTextColor={colors.text.disabled}
+            placeholderTextColor={colors.text.muted}
+            selectionColor={colors.accent.primary}
+            cursorColor={colors.accent.primary}
             keyboardType="decimal-pad"
             style={[styles.priceInput, { color: colors.text.primary }]}
           />
-        </View>
-        <Text style={[styles.perText, { color: colors.text.muted }]}>{cycleSuffix}</Text>
+          <Text style={[styles.perInline, { color: colors.text.muted }]}>{cycleSuffix}</Text>
+        </Pressable>
         {errors.amount ? (
-          <Text style={[styles.error, { color: colors.status.error }]}>{errors.amount}</Text>
+          <Text style={[styles.fieldError, { color: colors.status.error }]}>{errors.amount}</Text>
         ) : null}
 
+        <Text style={[styles.fieldLabel, styles.fieldLabelSpaced, { color: colors.text.secondary }]}>
+          How often
+        </Text>
         <View style={[styles.segment, { backgroundColor: colors.background.elevated }]}>
           {BillingCycles.map((cycle) => {
             const active = cycle.id === billingCycle;
@@ -415,13 +487,22 @@ export default function AddSubscriptionScreen() {
               value={customDays}
               onChangeText={setCustomDays}
               placeholder="30"
-              placeholderTextColor={colors.text.disabled}
+              placeholderTextColor={colors.text.muted}
+              selectionColor={colors.accent.primary}
+              cursorColor={colors.accent.primary}
+              onFocus={() => setFocused("days")}
+              onBlur={() => setFocused(null)}
               keyboardType="number-pad"
               style={[
                 styles.customDaysInput,
                 {
                   color: colors.text.primary,
-                  borderColor: errors.customDays ? colors.status.error : colors.border.default,
+                  backgroundColor: colors.background.elevated,
+                  borderColor: errors.customDays
+                    ? colors.status.error
+                    : focused === "days"
+                      ? colors.accent.primary
+                      : colors.border.default,
                 },
               ]}
             />
@@ -429,7 +510,7 @@ export default function AddSubscriptionScreen() {
           </View>
         )}
         {errors.customDays ? (
-          <Text style={[styles.error, { color: colors.status.error }]}>{errors.customDays}</Text>
+          <Text style={[styles.fieldError, styles.center, { color: colors.status.error }]}>{errors.customDays}</Text>
         ) : null}
       </RowCard>
 
@@ -509,6 +590,8 @@ export default function AddSubscriptionScreen() {
             onChangeText={setNotes}
             placeholder="Anything to remember about it…"
             placeholderTextColor={colors.text.muted}
+            selectionColor={colors.accent.primary}
+            cursorColor={colors.accent.primary}
             multiline
           />
         </RowCard>
@@ -631,25 +714,40 @@ const styles = StyleSheet.create({
   tileName: { fontSize: 12, fontWeight: "700", textAlign: "center" },
 
   // Step 2
-  identity: { alignItems: "center", gap: 8, paddingTop: 4 },
-  nameInput: { fontSize: 22, fontWeight: "800", minWidth: 200, paddingVertical: 4 },
+  identity: { alignItems: "center", gap: 8, paddingTop: 2 },
   changeLink: { fontSize: 13, fontWeight: "700" },
-  error: { fontSize: 12, fontWeight: "600", textAlign: "center" },
+  field: { gap: 6 },
+  fieldLabel: { fontSize: 13, fontWeight: "700", marginLeft: 2 },
+  fieldLabelSpaced: { marginTop: 16, marginBottom: 6 },
+  fieldError: { fontSize: 12, fontWeight: "600", marginLeft: 2, marginTop: 4 },
+  center: { textAlign: "center" },
+  inputBox: { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, height: 52, justifyContent: "center" },
+  nameInput: { fontSize: 17, fontWeight: "700", padding: 0 },
 
-  priceCard: { paddingVertical: 18, alignItems: "stretch" },
+  priceCard: { paddingVertical: 16, alignItems: "stretch" },
+  priceBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 60,
+    marginTop: 6,
+  },
+  currency: { fontSize: 24, fontWeight: "700", marginRight: 6 },
+  priceInput: { flex: 1, fontSize: 28, fontWeight: "800", padding: 0 },
+  perInline: { fontSize: 14, fontWeight: "600", marginLeft: 8 },
+  foreignNote: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, padding: 10, marginTop: 6 },
+  foreignNoteText: { flex: 1, fontSize: 13, fontWeight: "600", lineHeight: 18 },
   cardLabel: { fontSize: 11, fontWeight: "800", letterSpacing: 0.6, textAlign: "center" },
   cardLabelLeft: { textAlign: "left", marginTop: 4 },
-  priceRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 6 },
-  currency: { fontSize: 30, fontWeight: "700", marginRight: 4 },
-  priceInput: { fontSize: 44, fontWeight: "800", minWidth: 110, textAlign: "center", padding: 0 },
-  perText: { fontSize: 14, fontWeight: "600", textAlign: "center", marginTop: 2, marginBottom: 6 },
-  segment: { flexDirection: "row", borderRadius: 14, padding: 4, marginTop: 10 },
+  segment: { flexDirection: "row", borderRadius: 14, padding: 4 },
   segmentItem: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 9, borderRadius: 10 },
   segmentText: { fontSize: 13, fontWeight: "700" },
   customDaysRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, marginTop: 12 },
   customDaysText: { fontSize: 15, fontWeight: "600" },
   customDaysInput: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 10,
     minWidth: 64,
     paddingVertical: 8,

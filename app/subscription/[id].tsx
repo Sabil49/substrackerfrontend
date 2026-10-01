@@ -3,6 +3,7 @@ import BrandLoader, { LoadingDots } from "@/components/BrandLoader";
 import Button from "@/components/Button";
 import ServiceIcon from "@/components/ServiceIcon";
 import { findServiceByName } from "@/constants/services";
+import { categoryLabel } from "@/constants/theme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Subscription, subscriptionsApi } from "@/services/api";
 import { formatCurrency, formatDate, getDaysUntil } from "@/utils/date";
@@ -313,9 +314,7 @@ export default function SubscriptionDetailScreen() {
             <View style={[styles.infoRow, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Category</Text>
               <Text style={[styles.infoValue, { color: colors.text.primary }]}>
-                {subscription.category
-                  ? subscription.category.charAt(0).toUpperCase() + subscription.category.slice(1)
-                  : "Other"}
+                {categoryLabel(subscription.category)}
               </Text>
             </View>
             <View style={[styles.infoRow, { borderBottomColor: colors.border.light }]}>

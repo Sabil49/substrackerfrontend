@@ -215,6 +215,8 @@ export interface Analytics {
     amount: number;
     currency: string;
   } | null;
+  // Subscriptions still saved in another currency: not part of the $ totals.
+  notIncluded?: { currency: string; monthlyTotal: number; count: number }[];
 }
 
 export interface User {

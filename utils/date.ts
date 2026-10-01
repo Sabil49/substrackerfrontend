@@ -77,10 +77,15 @@ export function formatCurrency(
   amount: number,
   currency: string = "USD",
 ): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency || "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    // Unknown currency code — still show the number rather than crash.
+    return `${currency} ${Number(amount).toFixed(2)}`;
+  }
 }

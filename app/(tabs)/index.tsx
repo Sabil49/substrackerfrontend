@@ -25,6 +25,9 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+// Totals are in $; subscriptions saved in another currency are shown apart.
+const isUsd = (item: Subscription) => (item.currency || "USD").toUpperCase() === "USD";
+
 function getMonthlyAmount(subscription: Subscription) {
   const amount = Number(subscription.amount) || 0;
   const cycle = subscription.billingCycle.toLowerCase();
@@ -99,10 +102,21 @@ export default function HomeScreen() {
     [subscriptions],
   );
 
+  // Totals are in $. A subscription saved in another currency (an older receipt
+  // scan) is listed separately instead of being counted as dollars.
   const monthlyTotal = useMemo(
-    () => activeSubscriptions.reduce((total, item) => total + getMonthlyAmount(item), 0),
+    () => activeSubscriptions.filter(isUsd).reduce((total, item) => total + getMonthlyAmount(item), 0),
     [activeSubscriptions],
   );
+  const notIncluded = useMemo(() => {
+    const byCurrency: Record<string, number> = {};
+    for (const item of activeSubscriptions) {
+      if (isUsd(item)) continue;
+      const currency = item.currency.toUpperCase();
+      byCurrency[currency] = (byCurrency[currency] || 0) + getMonthlyAmount(item);
+    }
+    return Object.entries(byCurrency);
+  }, [activeSubscriptions]);
 
   const trialEndingSoon = useMemo(
     () =>
@@ -126,7 +140,7 @@ export default function HomeScreen() {
   );
 
   const potentialMonthlySavings = useMemo(
-    () => reviewCandidates.reduce((total, item) => total + getMonthlyAmount(item), 0),
+    () => reviewCandidates.filter(isUsd).reduce((total, item) => total + getMonthlyAmount(item), 0),
     [reviewCandidates],
   );
 
@@ -306,6 +320,12 @@ export default function HomeScreen() {
               Total {formatCurrency(monthlyTotal, "USD")}
             </Text>
             <Text style={[styles.totalSub, { color: colors.text.muted }]}>Monthly</Text>
+            {notIncluded.length ? (
+              <Text style={[styles.totalSub, { color: colors.status.warning }]}>
+                {notIncluded.map(([currency, total]) => `+ ${formatCurrency(total, currency)}`).join("  ")}
+                /mo not included (not in $)
+              </Text>
+            ) : null}
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
         </View>

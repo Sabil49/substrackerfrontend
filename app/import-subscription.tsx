@@ -12,7 +12,8 @@ import {
   ToggleRow,
   ValueRow,
 } from "@/components/FormRow";
-import { BillingCycles, Categories, NotificationOptions } from "@/constants/theme";
+import { BillingCycles, Categories, normalizeCategory, NotificationOptions } from "@/constants/theme";
+import { formatCurrency } from "@/utils/date";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
   getFriendlyErrorMessage,
@@ -73,7 +74,9 @@ export default function ImportSubscriptionScreen() {
 
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState("USD");
+  // Prices are always saved in $. If the receipt is in another currency, its
+  // original price is shown so the user can enter the $ amount.
+  const [foreignPrice, setForeignPrice] = useState<string | null>(null);
   const [billingCycle, setBillingCycle] = useState("monthly");
   const [category, setCategory] = useState("other");
   const [startDate, setStartDate] = useState(toYmd(new Date()));
@@ -209,10 +212,16 @@ export default function ImportSubscriptionScreen() {
     try {
       const extracted = await importApi.receipt({ imageBase64, mimeType });
       setName(extracted.name || "");
-      setAmount(extracted.amount ? String(extracted.amount) : "");
-      setCurrency(extracted.currency || "USD");
+      const receiptCurrency = (extracted.currency || "USD").toUpperCase();
+      if (receiptCurrency === "USD" || !extracted.amount) {
+        setForeignPrice(null);
+        setAmount(extracted.amount ? String(extracted.amount) : "");
+      } else {
+        setForeignPrice(formatCurrency(Number(extracted.amount), receiptCurrency));
+        setAmount("");
+      }
       setBillingCycle((extracted.billingCycle || "monthly").toLowerCase());
-      setCategory((extracted.category || "other").toLowerCase());
+      setCategory(normalizeCategory(extracted.category));
       setStartDate(normalizeDateInput(extracted.startDate) || toYmd(new Date()));
       setIsTrial(Boolean(extracted.isTrial));
       setTrialEndDate(normalizeDateInput(extracted.trialEndDate));
@@ -264,7 +273,7 @@ export default function ImportSubscriptionScreen() {
       await subscriptionsApi.create({
         name: name.trim(),
         amount: parsedAmount,
-        currency: currency.trim().toUpperCase() || "USD",
+        currency: "USD",
         billingCycle: billingCycle.toUpperCase(),
         category: category || "Other",
         startDate: startIso,
@@ -409,13 +418,21 @@ export default function ImportSubscriptionScreen() {
                   onPress={() => setTrialSheetOpen(true)}
                 />
               )}
+              {foreignPrice ? (
+                <View style={[styles.foreignNote, { backgroundColor: `${colors.status.warning}1F` }]}>
+                  <Ionicons name="information-circle-outline" size={16} color={colors.status.warning} />
+                  <Text style={[styles.foreignNoteText, { color: colors.text.primary }]}>
+                    Your receipt shows {foreignPrice}. Enter the price in $.
+                  </Text>
+                </View>
+              ) : null}
               <TextFieldRow
                 label="Price"
                 value={amount}
-                onChangeText={setAmount}
+                onChangeText={(text) => setAmount(text.replace(",", "."))}
                 placeholder="0.00"
                 keyboardType="decimal-pad"
-                prefix={currency === "USD" ? "$" : currency}
+                prefix="$"
               />
               <ValueRow label="Started" value={formatDateLabel(startDate)} onPress={() => setDateSheetOpen(true)} />
               <ValueRow
@@ -511,6 +528,8 @@ export default function ImportSubscriptionScreen() {
 }
 
 const styles = StyleSheet.create({
+  foreignNote: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, padding: 10, marginVertical: 10 },
+  foreignNoteText: { flex: 1, fontSize: 13, fontWeight: "600", lineHeight: 18 },
   root: { flex: 1 },
   pageGlow: { position: "absolute", top: 0, left: 0, right: 0, height: 420 },
   safeArea: { flex: 1 },

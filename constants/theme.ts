@@ -81,6 +81,47 @@ export const Categories = [
   { id: "other", name: "Other", icon: "📱" },
 ];
 
+// Maps any category text (e.g. from a scanned receipt) onto one of ours.
+const CATEGORY_ALIASES: Record<string, string> = {
+  software: "work",
+  productivity: "work",
+  business: "work",
+  ai: "work",
+  education: "work",
+  streaming: "entertainment",
+  music: "entertainment",
+  video: "entertainment",
+  gaming: "entertainment",
+  games: "entertainment",
+  news: "entertainment",
+  cloud: "storage",
+  backup: "storage",
+  gym: "fitness",
+  sports: "fitness",
+  medical: "health",
+  wellness: "health",
+  meditation: "health",
+  retail: "shopping",
+  delivery: "shopping",
+  food: "shopping",
+};
+
+export function normalizeCategory(raw?: string | null): string {
+  const key = (raw ?? "").trim().toLowerCase();
+  if (!key) return "other";
+  if (Categories.some((cat) => cat.id === key)) return key;
+  return CATEGORY_ALIASES[key] ?? "other";
+}
+
+// "🎬 Entertainment" for our categories; anything else just capitalized.
+export function categoryLabel(raw?: string | null): string {
+  const key = (raw ?? "").trim().toLowerCase();
+  const known = Categories.find((cat) => cat.id === key);
+  if (known) return `${known.icon} ${known.name}`;
+  if (!key) return "📱 Other";
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
 export const BillingCycles = [
   { id: "weekly", name: "Weekly", days: 7 },
   { id: "monthly", name: "Monthly", days: 30 },

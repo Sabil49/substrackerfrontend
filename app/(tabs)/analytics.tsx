@@ -4,6 +4,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import BrandLoader from "@/components/BrandLoader";
 import { Analytics, analyticsApi, getFriendlyErrorMessage } from "@/services/api";
 import { dataCache, FRESH_MS } from "@/services/dataCache";
+import { categoryLabel } from "@/constants/theme";
 import { formatCurrency, formatShortDate } from "@/utils/date";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -90,7 +91,7 @@ export default function AnalyticsScreen() {
       >
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.text.primary }]}>
-            Analytics
+            Statistics
           </Text>
         </View>
         <View style={styles.emptyContainer}>
@@ -111,7 +112,7 @@ export default function AnalyticsScreen() {
       >
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.text.primary }]}>
-            Analytics
+            Statistics
           </Text>
         </View>
         <ScrollView
@@ -128,7 +129,7 @@ export default function AnalyticsScreen() {
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>📊</Text>
             <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>
-              {premiumRequired ? "Advanced Analytics" : "Analytics Unavailable"}
+              {premiumRequired ? "Spending Statistics" : "Statistics Unavailable"}
             </Text>
             <Text style={[styles.emptyText, { color: colors.text.secondary }]}>
               {premiumRequired
@@ -154,7 +155,7 @@ export default function AnalyticsScreen() {
     >
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text.primary }]}>
-          Analytics
+          Statistics
         </Text>
       </View>
 
@@ -185,6 +186,14 @@ export default function AnalyticsScreen() {
                 {analytics.totalSubscriptions || 0} subscription
                 {analytics.totalSubscriptions !== 1 ? "s" : ""}
               </Text>
+              {analytics.notIncluded?.length ? (
+                <Text style={styles.heroNote}>
+                  {analytics.notIncluded
+                    .map((entry) => `+ ${formatCurrency(entry.monthlyTotal, entry.currency)}`)
+                    .join("  ")}
+                  /mo not included. Edit {analytics.notIncluded.reduce((n, e) => n + e.count, 0) === 1 ? "it" : "them"} to set a $ price.
+                </Text>
+              ) : null}
             </LinearGradient>
 
             <View style={styles.statsGrid}>
@@ -239,7 +248,7 @@ export default function AnalyticsScreen() {
                       { color: colors.text.primary },
                     ]}
                   >
-                    Upcoming Charges
+                    Due this month
                   </Text>
                   {analytics.upcomingCharges
                     .slice(0, 5)
@@ -314,7 +323,7 @@ export default function AnalyticsScreen() {
                             { color: colors.text.primary },
                           ]}
                         >
-                          {category || "Uncategorized"}
+                          {categoryLabel(category)}
                         </Text>
                         <Text
                           style={[
@@ -337,6 +346,13 @@ export default function AnalyticsScreen() {
 }
 
 const styles = StyleSheet.create({
+  heroNote: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+    marginTop: 8,
+  },
   container: {
     flex: 1,
   },
